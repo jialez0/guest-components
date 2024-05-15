@@ -9,6 +9,9 @@ pub type Result<T> = std::result::Result<T, AliyunError>;
 
 #[derive(Error, Debug)]
 pub enum AliyunError {
+    #[error("Cachefs decryption mount failed")]
+    CachefsMountFailed,
+
     #[error("Error when getting plaintext of OSS parameters")]
     GetPlaintextParameter(#[from] anyhow::Error),
 
@@ -26,4 +29,7 @@ pub enum AliyunError {
 
     #[error("Failed to recognize the storage type")]
     StorageTypeNotRecognized(#[from] strum::ParseError),
+
+    #[error("Unsupport encryption type")]
+    UnsupportedEncryptionType,
 }

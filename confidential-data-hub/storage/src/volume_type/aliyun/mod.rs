@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use log::{debug, error};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
+use tempfile::TempDir;
 use tokio::{
     fs,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -35,6 +36,12 @@ const OSSFS_BIN: &str = "/usr/local/bin/ossfs";
 /// Gocryptofs binary
 const GOCRYPTFS_BIN: &str = "/usr/local/bin/gocryptfs";
 
+/// Cachefs binary
+const CACHEFS_BIN: &str = "/usr/local/bin/cachefs";
+
+/// Name of the file that contains cachefs password
+const CACHEFS_PASSWD_FILE: &str = "cachefs_passwd";
+
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 struct OssParameters {
     #[serde(rename = "akId")]
@@ -46,6 +53,8 @@ struct OssParameters {
     pub bucket: String,
     #[serde(default)]
     pub encrypted: String,
+    #[serde(rename = "cryptoOpt", default)]
+    pub crypto_opt: String,
     #[serde(rename = "encPasswd", default)]
     pub enc_passwd: String,
     #[serde(rename = "kmsKeyId", default)]
@@ -91,6 +100,206 @@ async fn create_random_dir() -> anyhow::Result<String> {
 }
 
 impl Oss {
+    async fn mount_gocryptfs(
+        oss_parameter: OssParameters,
+        ossfs_passwd_path: String,
+        tempdir: TempDir,
+        mount_point: &str,
+        mut opts: Vec<String>,
+        mut crypt_opt: Vec<String>,
+    ) -> Result<()> {
+        let gocryptfs_dir = create_random_dir().await?;
+
+        let mut parameters = vec![
+            format!("{}:{}", oss_parameter.bucket, oss_parameter.path),
+            gocryptfs_dir.clone(),
+            format!("-ourl={}", oss_parameter.url),
+            format!("-opasswd_file={ossfs_passwd_path}"),
+        ];
+
+        parameters.append(&mut opts);
+        let mut oss = Command::new(OSSFS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|e| {
+                error!("oss cmd fork failed: {e}");
+                AliyunError::OssfsMountFailed
+            })?;
+        let oss_res = oss.wait().await?;
+        if !oss_res.success() {
+            {
+                let mut stderr = String::new();
+                if let Some(mut err) = oss.stderr {
+                    err.read_to_string(&mut stderr).await?;
+                    error!("OSS mount failed with stderr: {stderr}");
+                } else {
+                    error!("OSS mount failed");
+                }
+
+                return Err(AliyunError::OssfsMountFailed);
+            }
+        }
+
+        // get the gocryptfs password
+        let plain_passwd = get_plaintext_secret(&oss_parameter.enc_passwd).await?;
+
+        // create gocryptfs passwd file
+        let mut gocryptfs_passwd_path = tempdir.path().to_owned();
+        gocryptfs_passwd_path.push(GOCRYPTFS_PASSWD_FILE);
+        let gocryptfs_passwd_path = gocryptfs_passwd_path.to_string_lossy().to_string();
+        let mut gocryptfs_passwd = fs::File::create(&gocryptfs_passwd_path).await?;
+
+        gocryptfs_passwd.write_all(plain_passwd.as_bytes()).await?;
+        gocryptfs_passwd.sync_all().await?;
+        drop(gocryptfs_passwd);
+
+        // generate parameters for gocryptfs, and execute
+        let mut parameters = vec![
+            gocryptfs_dir,
+            mount_point.to_string(),
+            "-passfile".to_string(),
+            gocryptfs_passwd_path,
+            "-nosyslog".to_string(),
+        ];
+        parameters.append(&mut crypt_opt);
+        let mut gocryptfs = Command::new(GOCRYPTFS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|_| AliyunError::GocryptfsMountFailed)?;
+
+        let gocryptfs_res = gocryptfs.wait().await?;
+        if !gocryptfs_res.success() {
+            {
+                let mut stderr = String::new();
+
+                if let Some(mut err) = gocryptfs.stderr {
+                    err.read_to_string(&mut stderr).await?;
+                    error!("gocryptfs failed with stderr: {stderr}");
+                } else {
+                    error!("gocryptfs failed");
+                }
+                return Err(AliyunError::GocryptfsMountFailed);
+            }
+        }
+        Ok(())
+    }
+
+    async fn mount_pure_oss(
+        oss_parameter: OssParameters,
+        ossfs_passwd_path: String,
+        mount_point: &str,
+        mut opts: Vec<String>,
+    ) -> Result<()> {
+        let mut parameters = vec![
+            format!("{}:{}", oss_parameter.bucket, oss_parameter.path),
+            mount_point.to_string(),
+            format!("-ourl={}", oss_parameter.url),
+            format!("-opasswd_file={ossfs_passwd_path}"),
+        ];
+
+        parameters.append(&mut opts);
+        let mut oss = Command::new(OSSFS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|e| {
+                error!("oss cmd fork failed: {e}");
+                AliyunError::OssfsMountFailed
+            })?;
+        let oss_res = oss.wait().await?;
+        if !oss_res.success() {
+            {
+                let mut stderr = String::new();
+                if let Some(mut err) = oss.stderr {
+                    err.read_to_string(&mut stderr).await?;
+                    error!("oss mount failed with stderr: {stderr}");
+                } else {
+                    error!("oss mount failed");
+                }
+                return Err(AliyunError::OssfsMountFailed);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn mount_cachefs(
+        oss_parameter: OssParameters,
+        ossfs_passwd_path: String,
+        tempdir: TempDir,
+        mount_point: &str,
+        mut opts: Vec<String>,
+        mut crypt_opt: Vec<String>,
+    ) -> Result<()> {
+        let cachefs_dir = create_random_dir().await?;
+
+        let mut parameters = vec![
+            format!("{}:{}", oss_parameter.bucket, oss_parameter.path),
+            cachefs_dir.clone(),
+            format!("-ourl={}", oss_parameter.url),
+            format!("-opasswd_file={ossfs_passwd_path}"),
+        ];
+
+        parameters.append(&mut opts);
+        let mut oss = Command::new(OSSFS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|e| {
+                error!("oss cmd fork failed: {e}");
+                AliyunError::OssfsMountFailed
+            })?;
+        let oss_res = oss.wait().await?;
+        if !oss_res.success() {
+            {
+                let mut stderr = String::new();
+                if let Some(mut err) = oss.stderr {
+                    err.read_to_string(&mut stderr).await?;
+                    error!("OSS mount failed with stderr: {stderr}");
+                } else {
+                    error!("OSS mount failed");
+                }
+
+                return Err(AliyunError::OssfsMountFailed);
+            }
+        }
+
+        // get the cachefs password
+        let plain_passwd = get_plaintext_secret(&oss_parameter.enc_passwd).await?;
+
+        // create cachefs passwd file
+        let mut cachefs_passwd_path = tempdir.path().to_owned();
+        cachefs_passwd_path.push(CACHEFS_PASSWD_FILE);
+        let cachefs_passwd_path = cachefs_passwd_path.to_string_lossy().to_string();
+        let mut cachefs_passwd = fs::File::create(&cachefs_passwd_path).await?;
+
+        cachefs_passwd.write_all(plain_passwd.as_bytes()).await?;
+        cachefs_passwd.sync_all().await?;
+        drop(cachefs_passwd);
+
+        let cachefs_cache_dir = create_random_dir().await?;
+
+        // generate parameters for cachefs, and execute
+        let mut parameters = vec![
+            "cache".into(),
+            "--source-dir".into(),
+            cachefs_dir,
+            "--cache-dir".into(),
+            cachefs_cache_dir,
+            "--passfile".into(),
+            cachefs_passwd_path,
+        ];
+        parameters.append(&mut crypt_opt);
+        parameters.push("cache".into());
+        parameters.push(mount_point.into());
+        Command::new(CACHEFS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|_| AliyunError::CachefsMountFailed)?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        Ok(())
+    }
+
     async fn real_mount(
         &self,
         options: &HashMap<String, String>,
@@ -130,117 +339,45 @@ impl Oss {
         drop(ossfs_passwd);
 
         // generate parameters for ossfs command
-        let mut opts = oss_parameter
+        let opts = oss_parameter
             .other_opts
             .split_whitespace()
             .map(str::to_string)
             .collect();
 
-        if oss_parameter.encrypted == "gocryptfs" {
-            let gocryptfs_dir = create_random_dir().await?;
+        // generate parameters for crypto mount command
+        let crypt_opt = oss_parameter
+            .crypto_opt
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
 
-            let mut parameters = vec![
-                format!("{}:{}", oss_parameter.bucket, oss_parameter.path),
-                gocryptfs_dir.clone(),
-                format!("-ourl={}", oss_parameter.url),
-                format!("-opasswd_file={ossfs_passwd_path}"),
-            ];
-
-            parameters.append(&mut opts);
-            let mut oss = Command::new(OSSFS_BIN)
-                .args(parameters)
-                .spawn()
-                .map_err(|e| {
-                    error!("oss cmd fork failed: {e}");
-                    AliyunError::OssfsMountFailed
-                })?;
-            let oss_res = oss.wait().await?;
-            if !oss_res.success() {
-                {
-                    let mut stderr = String::new();
-                    if let Some(mut err) = oss.stderr {
-                        err.read_to_string(&mut stderr).await?;
-                        error!("OSS mount failed with stderr: {stderr}");
-                    } else {
-                        error!("OSS mount failed");
-                    }
-
-                    return Err(AliyunError::OssfsMountFailed);
-                }
+        match &oss_parameter.encrypted[..] {
+            "gocryptfs" => {
+                Self::mount_gocryptfs(
+                    oss_parameter,
+                    ossfs_passwd_path,
+                    tempdir,
+                    mount_point,
+                    opts,
+                    crypt_opt,
+                )
+                .await
             }
-
-            // get the gocryptfs password
-            let plain_passwd = get_plaintext_secret(&oss_parameter.enc_passwd).await?;
-
-            // create gocryptfs passwd file
-            let mut gocryptfs_passwd_path = tempdir.path().to_owned();
-            gocryptfs_passwd_path.push(GOCRYPTFS_PASSWD_FILE);
-            let gocryptfs_passwd_path = gocryptfs_passwd_path.to_string_lossy().to_string();
-            let mut gocryptfs_passwd = fs::File::create(&gocryptfs_passwd_path).await?;
-
-            gocryptfs_passwd.write_all(plain_passwd.as_bytes()).await?;
-            gocryptfs_passwd.sync_all().await?;
-            drop(gocryptfs_passwd);
-
-            // generate parameters for gocryptfs, and execute
-            let parameters = vec![
-                gocryptfs_dir,
-                mount_point.to_string(),
-                "-passfile".to_string(),
-                gocryptfs_passwd_path,
-                "-nosyslog".to_string(),
-            ];
-            let mut gocryptfs = Command::new(GOCRYPTFS_BIN)
-                .args(parameters)
-                .spawn()
-                .map_err(|_| AliyunError::GocryptfsMountFailed)?;
-
-            let gocryptfs_res = gocryptfs.wait().await?;
-            if !gocryptfs_res.success() {
-                {
-                    let mut stderr = String::new();
-
-                    if let Some(mut err) = gocryptfs.stderr {
-                        err.read_to_string(&mut stderr).await?;
-                        error!("gocryptfs failed with stderr: {stderr}");
-                    } else {
-                        error!("gocryptfs failed");
-                    }
-                    return Err(AliyunError::GocryptfsMountFailed);
-                }
+            "cachefs" => {
+                Self::mount_cachefs(
+                    oss_parameter,
+                    ossfs_passwd_path,
+                    tempdir,
+                    mount_point,
+                    opts,
+                    crypt_opt,
+                )
+                .await
             }
-        } else {
-            let mut parameters = vec![
-                format!("{}:{}", oss_parameter.bucket, oss_parameter.path),
-                mount_point.to_string(),
-                format!("-ourl={}", oss_parameter.url),
-                format!("-opasswd_file={ossfs_passwd_path}"),
-            ];
-
-            parameters.append(&mut opts);
-            let mut oss = Command::new(OSSFS_BIN)
-                .args(parameters)
-                .spawn()
-                .map_err(|e| {
-                    error!("oss cmd fork failed: {e}");
-                    AliyunError::OssfsMountFailed
-                })?;
-            let oss_res = oss.wait().await?;
-            if !oss_res.success() {
-                {
-                    let mut stderr = String::new();
-                    if let Some(mut err) = oss.stderr {
-                        err.read_to_string(&mut stderr).await?;
-                        error!("oss mount failed with stderr: {stderr}");
-                    } else {
-                        error!("oss mount failed");
-                    }
-                    return Err(AliyunError::OssfsMountFailed);
-                }
-            }
-        };
-
-        Ok(())
+            "" => Self::mount_pure_oss(oss_parameter, ossfs_passwd_path, mount_point, opts).await,
+            _ => Err(AliyunError::UnsupportedEncryptionType),
+        }
     }
 }
 
