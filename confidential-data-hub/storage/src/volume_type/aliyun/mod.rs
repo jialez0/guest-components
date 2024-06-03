@@ -33,6 +33,9 @@ const GOCRYPTFS_PASSWD_FILE: &str = "gocryptfs_passwd";
 /// Aliyun OSS filesystem client binary
 const OSSFS_BIN: &str = "/usr/local/bin/ossfs";
 
+/// Aliyun s3fs filesystem client binary
+const S3FS_BIN: &str = "/usr/local/bin/s3fs";
+
 /// Gocryptofs binary
 const GOCRYPTFS_BIN: &str = "/usr/local/bin/gocryptfs";
 
@@ -224,6 +227,84 @@ impl Oss {
 
     async fn mount_cachefs(
         oss_parameter: OssParameters,
+        _ossfs_passwd_path: String,
+        tempdir: TempDir,
+        mount_point: &str,
+        mut opts: Vec<String>,
+        mut crypt_opt: Vec<String>,
+    ) -> Result<()> {
+        let cachefs_dir = create_random_dir().await?;
+
+        let mut parameters = vec![
+            format!("{}:{}", oss_parameter.bucket, oss_parameter.path),
+            cachefs_dir.clone(),
+            "-o".into(),
+            format!("url={}", oss_parameter.url),
+        ];
+
+        parameters.append(&mut opts);
+        let mut s3fs = Command::new(S3FS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|e| {
+                error!("oss cmd fork failed: {e}");
+                AliyunError::OssfsMountFailed
+            })?;
+        let s3fs_res = s3fs.wait().await?;
+        if !s3fs_res.success() {
+            {
+                let mut stderr = String::new();
+                if let Some(mut err) = s3fs.stderr {
+                    err.read_to_string(&mut stderr).await?;
+                    error!("OSS mount failed with stderr: {stderr}");
+                } else {
+                    error!("OSS mount failed");
+                }
+
+                return Err(AliyunError::OssfsMountFailed);
+            }
+        }
+
+        // get the cachefs password
+        let plain_passwd = get_plaintext_secret(&oss_parameter.enc_passwd).await?;
+
+        // create cachefs passwd file
+        let mut cachefs_passwd_path = tempdir.path().to_owned();
+        cachefs_passwd_path.push(CACHEFS_PASSWD_FILE);
+        let cachefs_passwd_path = cachefs_passwd_path.to_string_lossy().to_string();
+        let mut cachefs_passwd = fs::File::create(&cachefs_passwd_path).await?;
+
+        cachefs_passwd.write_all(plain_passwd.as_bytes()).await?;
+        cachefs_passwd.sync_all().await?;
+        drop(cachefs_passwd);
+
+        let cachefs_cache_dir = create_random_dir().await?;
+
+        // generate parameters for cachefs, and execute
+        let mut parameters = vec![
+            "cache".into(),
+            "--source-dir".into(),
+            cachefs_dir,
+            "--cache-dir".into(),
+            cachefs_cache_dir,
+            "--passfile".into(),
+            cachefs_passwd_path,
+        ];
+        parameters.append(&mut crypt_opt);
+        parameters.push("cache".into());
+        parameters.push(mount_point.into());
+        Command::new(CACHEFS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|_| AliyunError::CachefsMountFailed)?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        Ok(())
+    }
+
+    async fn mount_cachefs_ossfs(
+        oss_parameter: OssParameters,
         ossfs_passwd_path: String,
         tempdir: TempDir,
         mount_point: &str,
@@ -353,7 +434,7 @@ impl Oss {
             .collect();
 
         match &oss_parameter.encrypted[..] {
-            "gocryptfs" => {
+            "gocryptfs-oss" => {
                 Self::mount_gocryptfs(
                     oss_parameter,
                     ossfs_passwd_path,
@@ -364,8 +445,19 @@ impl Oss {
                 )
                 .await
             }
-            "cachefs" => {
+            "cachefs-s3fs" => {
                 Self::mount_cachefs(
+                    oss_parameter,
+                    ossfs_passwd_path,
+                    tempdir,
+                    mount_point,
+                    opts,
+                    crypt_opt,
+                )
+                .await
+            }
+            "cachefs-ossfs" => {
+                Self::mount_cachefs_ossfs(
                     oss_parameter,
                     ossfs_passwd_path,
                     tempdir,
