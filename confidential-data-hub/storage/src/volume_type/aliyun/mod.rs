@@ -33,11 +33,11 @@ const GOCRYPTFS_PASSWD_FILE: &str = "gocryptfs_passwd";
 /// Aliyun OSS filesystem client binary
 const OSSFS_BIN: &str = "/usr/local/bin/ossfs";
 
-/// Aliyun s3fs filesystem client binary
-const S3FS_BIN: &str = "/usr/local/bin/s3fs";
-
 /// Gocryptofs binary
 const GOCRYPTFS_BIN: &str = "/usr/local/bin/gocryptfs";
+
+/// Aliyun s3fs filesystem client binary
+const S3FS_BIN: &str = "/usr/local/bin/s3fs";
 
 /// Cachefs binary
 const CACHEFS_BIN: &str = "/usr/local/bin/cachefs";
@@ -68,6 +68,8 @@ struct OssParameters {
     pub readonly: String,
     #[serde(rename = "targetPath")]
     pub target_path: String,
+    #[serde(rename = "sourcePath")]
+    pub source_path: String,
     pub url: String,
     #[serde(rename = "volumeId")]
     pub volume_id: String,
@@ -225,7 +227,57 @@ impl Oss {
         Ok(())
     }
 
-    async fn mount_cachefs(
+    async fn mount_cachefs(oss_parameter: OssParameters, mount_point: &str) -> Result<()> {
+        // get the cachefs password
+        let plain_passwd = get_plaintext_secret(&oss_parameter.enc_passwd).await?;
+
+        // create temp directory to store metadata for this mount operation
+        let tempdir = tempfile::tempdir()?;
+
+        // create cachefs passwd file
+        let mut cachefs_passwd_path = tempdir.path().to_owned();
+        cachefs_passwd_path.push(CACHEFS_PASSWD_FILE);
+        let cachefs_passwd_path = cachefs_passwd_path.to_string_lossy().to_string();
+        let mut cachefs_passwd = fs::File::create(&cachefs_passwd_path).await?;
+
+        cachefs_passwd.write_all(plain_passwd.as_bytes()).await?;
+        cachefs_passwd.sync_all().await?;
+        drop(cachefs_passwd);
+
+        let cachefs_cache_dir = create_random_dir().await?;
+
+        // generate parameters for crypto mount command
+        let mut crypto_opt = oss_parameter
+            .crypto_opt
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+
+        // generate parameters for cachefs, and execute
+        let mut parameters = vec![
+            "cache".into(),
+            "--source-dir".into(),
+            oss_parameter.source_path,
+            "--cache-dir".into(),
+            cachefs_cache_dir,
+            "--passfile".into(),
+            cachefs_passwd_path,
+        ];
+
+        parameters.append(&mut crypto_opt);
+        parameters.push("cache".into());
+        parameters.push(mount_point.into());
+        Command::new(CACHEFS_BIN)
+            .args(parameters)
+            .spawn()
+            .map_err(|_| AliyunError::CachefsMountFailed)?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        Ok(())
+    }
+
+    async fn mount_cachefs_s3fs(
         oss_parameter: OssParameters,
         _ossfs_passwd_path: String,
         tempdir: TempDir,
@@ -392,6 +444,10 @@ impl Oss {
 
         let oss_parameter: OssParameters = serde_json::from_str(&parameters)?;
 
+        if oss_parameter.encrypted == "cachefs" {
+            return Self::mount_cachefs(oss_parameter, mount_point).await;
+        }
+
         // unseal secret
         let plain_ak_id = get_plaintext_secret(&oss_parameter.ak_id).await?;
         let plain_ak_secret = get_plaintext_secret(&oss_parameter.ak_secret).await?;
@@ -446,7 +502,7 @@ impl Oss {
                 .await
             }
             "cachefs-s3fs" => {
-                Self::mount_cachefs(
+                Self::mount_cachefs_s3fs(
                     oss_parameter,
                     ossfs_passwd_path,
                     tempdir,
