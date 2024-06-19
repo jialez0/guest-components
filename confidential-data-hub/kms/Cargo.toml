@@ -16,7 +16,7 @@ const_format.workspace = true
 crypto = { path = "../../attestation-agent/deps/crypto", optional = true }
 ehsm_client = {git = "https://github.com/intel/ehsm", rev = "3454cac66b968a593c3edc43410c0b52416bbd3e", optional = true }
 hex = { workspace = true, optional = true }
-kbs_protocol = { path = "../../attestation-agent/kbs_protocol", default-features = false, features = ["passport", "aa_token", "openssl"], optional = true }
+kbs_protocol = { path = "../../attestation-agent/kbs_protocol", default-features = false, features = ["passport", "aa_token", "rust-crypto"], optional = true }
 lazy_static.workspace = true
 log.workspace = true
 p12 = { version = "0.6.3", optional = true }
