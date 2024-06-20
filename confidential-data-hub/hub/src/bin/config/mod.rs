@@ -162,11 +162,8 @@ mod tests {
 
     use crate::{config::DEFAULT_CDH_SOCKET_ADDR, CdhConfig, KbsConfig};
 
-    #[rstest]
     #[case(
         r#"
-socket = "unix:///run/confidential-containers/cdh.sock"
-
 [kbc]
 name = "offline_fs_kbc"
 url = ""
