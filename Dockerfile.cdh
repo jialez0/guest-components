@@ -1,0 +1,36 @@
+# Copyright (c) 2024 by Alibaba.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+ARG BASE_IMAGE=eci-nydus-registry.cn-hangzhou.cr.aliyuncs.com/docker/debian:stable-slim
+
+FROM ${BASE_IMAGE} AS builder
+
+WORKDIR /usr/src/guest-components
+COPY . .
+
+RUN apt update -y && apt install -y clang protobuf-compiler git curl musl-tools libssl-dev jq && \
+    apt clean all && \
+    rm -rf /tmp/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN rustup target add x86_64-unknown-linux-musl
+
+# Build confidential-data-hub
+RUN cd confidential-data-hub/hub && \
+    cargo build --release --bin cdh-oneshot --no-default-features --features "bin,aliyun,kbs" --target x86_64-unknown-linux-musl
+
+RUN strip target/x86_64-unknown-linux-musl/release/cdh-oneshot
+
+FROM ${BASE_IMAGE}
+
+# Copy binaries
+COPY --from=builder /usr/src/guest-components/target/x86_64-unknown-linux-musl/release/cdh-oneshot /usr/local/bin/confidential-data-hub
+COPY --from=builder /lib/x86_64-linux-gnu/libonig.so.5 /lib/x86_64-linux-gnu/libonig.so.5
+COPY --from=builder /lib/x86_64-linux-gnu/libjq.so.1 /lib/x86_64-linux-gnu/libjq.so.1
+COPY --from=builder /usr/bin/jq /usr/bin/jq
+COPY cdh-start.sh /usr/bin/start.sh
