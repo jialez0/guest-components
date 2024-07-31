@@ -21,8 +21,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+RUN rustup toolchain install 1.79.0-x86_64-unknown-linux-gnu
+
 # Build attestation-agent. Notice that libc version is not enough thus --release cannot pass
-RUN cargo build -p attestation-agent --bin ttrpc-aa --no-default-features --features bin,ttrpc,rust-crypto,coco_as,kbs,tdx-attester --target x86_64-unknown-linux-gnu
+RUN cargo +1.79.0 build -p attestation-agent --bin ttrpc-aa --no-default-features --features bin,ttrpc,rust-crypto,coco_as,kbs,tdx-attester --target x86_64-unknown-linux-gnu
 
 RUN strip target/x86_64-unknown-linux-gnu/debug/ttrpc-aa
 
