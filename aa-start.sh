@@ -5,6 +5,7 @@ set -o noglob
 
 # Initialize parameters
 trustee_address=''
+as_addr=''
 
 usage() {
   echo "This script is used to start Attestation Agent" 1>&2
@@ -17,6 +18,10 @@ usage() {
 # Parse cmd
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --as-addr)
+      as_addr="$2"
+      shift 2
+      ;;
     --trustee-addr)
       trustee_address="$2"
       shift 2
@@ -34,7 +39,7 @@ done
 cat << EOF > /etc/attestation-agent.toml
 [token_configs]
 [token_configs.coco_as]
-url = "${trustee_address}"
+url = "${as_addr}"
 
 [token_configs.kbs]
 url = "${trustee_address}"
