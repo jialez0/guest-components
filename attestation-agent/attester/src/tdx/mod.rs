@@ -17,6 +17,8 @@ use std::fs;
 use std::path::Path;
 use tdx_attest_rs::tdx_report_t;
 
+use pyo3::prelude::*;
+
 mod report;
 mod rtmr;
 
@@ -66,6 +68,8 @@ struct TdxEvidence {
     quote: String,
     // Eventlog of Attestation Agent
     aa_eventlog: Option<String>,
+    // GPU Attestation JWT
+    gpu_attestation_token: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -110,10 +114,14 @@ impl Attester for TdxAttester {
             }
         };
 
+        pyo3::prepare_freethreaded_python();
+        let gpu_attestation_token_option = get_gpu_attestation_token().ok().or_else(|| { log::warn!("Get GPU attestation token failed"); None});
+
         let evidence = TdxEvidence {
             cc_eventlog,
             quote,
             aa_eventlog,
+            gpu_attestation_token: gpu_attestation_token_option,
         };
 
         serde_json::to_string(&evidence).context("Serialize TDX evidence failed")
@@ -185,6 +193,33 @@ impl Attester for TdxAttester {
     }
 }
 
+fn get_gpu_attestation_token() -> Result<String> {
+    Python::with_gil(|py| {
+        let attestation_module = py.import("nv_attestation_sdk.attestation")?;
+        
+        let client_name = "AttestationAgent";
+        let attestation_class = attestation_module.getattr("Attestation")?;
+        let attestation_instance = attestation_class.call1((client_name,))?;
+
+        let devices = attestation_module.getattr("Devices")?;
+        let environment = attestation_module.getattr("Environment")?;
+        
+        attestation_instance.call_method1("add_verifier", (devices.getattr("GPU")?, environment.getattr("LOCAL")?, "", ""))?;
+
+        let result: bool = attestation_instance.call_method0("attest")?.extract()?;
+        let token: Option<String> = attestation_instance.call_method0("get_token")?.extract()?;
+
+        if result {
+            match token {
+                Some(t) => Ok(t),
+                None => Err(anyhow::anyhow!("Failed to obtain evidence token")),
+            }
+        } else {
+            Err(anyhow::anyhow!("Attestation failed"))
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,5 +232,12 @@ mod tests {
 
         let evidence = attester.get_evidence(report_data).await;
         assert!(evidence.is_ok());
+    }
+
+    #[test]
+    fn test_gpu_get_evidence() {
+        pyo3::prepare_freethreaded_python();
+        let gpu_evidence = get_gpu_attestation_token().unwrap();
+        // assert!(gpu_evidence.is_ok())
     }
 }
