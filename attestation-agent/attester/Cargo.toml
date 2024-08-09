@@ -18,6 +18,7 @@ log.workspace = true
 nix = { workspace = true, optional = true, features = ["ioctl", "fs"] }
 occlum_dcap = { git = "https://github.com/occlum/occlum", tag = "v0.29.7", optional = true }
 pv = { version = "0.10.0", package = "s390_pv", optional = true }
+pyo3 = { version = "0.15", features = ["extension-module"] }
 scroll = { version = "0.12.0", default-features = false, features = ["derive", "std"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
