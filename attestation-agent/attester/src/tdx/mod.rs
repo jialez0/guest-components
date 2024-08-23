@@ -114,8 +114,11 @@ impl Attester for TdxAttester {
             }
         };
 
-        pyo3::prepare_freethreaded_python();
-        let gpu_attestation_token_option = get_gpu_attestation_token().ok().or_else(|| { log::warn!("Get GPU attestation token failed"); None});
+        let gpu_attestation_token_option = get_gpu_token().ok().or_else(|| {
+            log::warn!("Get GPU attestation token failed");
+            None
+        });
+        let gpu_attestation_token_option = get_fresh_gpu_token().await;
 
         let evidence = TdxEvidence {
             cc_eventlog,
@@ -193,18 +196,38 @@ impl Attester for TdxAttester {
     }
 }
 
+async fn get_gpu_token() -> Option<String> {
+    tokio::task::spawn_blocking(|| get_gpu_attestation_token())
+        .await
+        .unwrap()
+        .ok()
+        .or_else(|| {
+            log::warn!("Get GPU attestation token failed");
+            None
+        })
+}
+
 fn get_gpu_attestation_token() -> Result<String> {
+    pyo3::prepare_freethreaded_python();
     Python::with_gil(|py| {
         let attestation_module = py.import("nv_attestation_sdk.attestation")?;
-        
+
         let client_name = "AttestationAgent";
         let attestation_class = attestation_module.getattr("Attestation")?;
         let attestation_instance = attestation_class.call1((client_name,))?;
 
         let devices = attestation_module.getattr("Devices")?;
         let environment = attestation_module.getattr("Environment")?;
-        
-        attestation_instance.call_method1("add_verifier", (devices.getattr("GPU")?, environment.getattr("LOCAL")?, "", ""))?;
+
+        attestation_instance.call_method1(
+            "add_verifier",
+            (
+                devices.getattr("GPU")?,
+                environment.getattr("LOCAL")?,
+                "",
+                "",
+            ),
+        )?;
 
         let result: bool = attestation_instance.call_method0("attest")?.extract()?;
         let token: Option<String> = attestation_instance.call_method0("get_token")?.extract()?;
