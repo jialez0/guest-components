@@ -48,6 +48,7 @@ RUN curl https://download.01.org/intel-sgx/sgx-dcap/1.21/linux/distro/Anolis86/s
 # COPY --from=builder /usr/src/guest-components/nvtrust-py/nv_attestation_sdk-1.3.0-py3-none-any.whl /usr/
 COPY --from=builder /usr/src/guest-components/nvtrust-py-aliyun-beijing-server/verifier-1.3.0-py3-none-any.whl /usr/
 COPY --from=builder /usr/src/guest-components/nvtrust-py-aliyun-beijing-server/nv_attestation_sdk-1.3.0-py3-none-any.whl /usr/
+COPY --from=builder /usr/src/guest-components/gpu_attestation.py /usr/
 RUN python3.8 -m pip install /usr/verifier-1.3.0-py3-none-any.whl
 RUN python3.8 -m pip install /usr/nv_attestation_sdk-1.3.0-py3-none-any.whl
 

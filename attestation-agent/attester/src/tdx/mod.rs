@@ -17,8 +17,6 @@ use std::fs;
 use std::path::Path;
 use tdx_attest_rs::tdx_report_t;
 
-use pyo3::prelude::*;
-
 mod report;
 mod rtmr;
 
@@ -114,11 +112,10 @@ impl Attester for TdxAttester {
             }
         };
 
-        let gpu_attestation_token_option = get_gpu_token().ok().or_else(|| {
+        let gpu_attestation_token_option = get_gpu_attestation_token().ok().or_else(|| {
             log::warn!("Get GPU attestation token failed");
             None
         });
-        let gpu_attestation_token_option = get_fresh_gpu_token().await;
 
         let evidence = TdxEvidence {
             cc_eventlog,
@@ -196,51 +193,22 @@ impl Attester for TdxAttester {
     }
 }
 
-async fn get_gpu_token() -> Option<String> {
-    tokio::task::spawn_blocking(|| get_gpu_attestation_token())
-        .await
-        .unwrap()
-        .ok()
-        .or_else(|| {
-            log::warn!("Get GPU attestation token failed");
-            None
-        })
-}
-
 fn get_gpu_attestation_token() -> Result<String> {
-    pyo3::prepare_freethreaded_python();
-    Python::with_gil(|py| {
-        let attestation_module = py.import("nv_attestation_sdk.attestation")?;
+    let output = std::process::Command::new("python3.8")
+        .arg("/usr/gpu_attestation.py")
+        .output()?;
 
-        let client_name = "AttestationAgent";
-        let attestation_class = attestation_module.getattr("Attestation")?;
-        let attestation_instance = attestation_class.call1((client_name,))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "Failed to execute GPU Attestation Python script: {}",
+            stderr
+        ));
+    }
 
-        let devices = attestation_module.getattr("Devices")?;
-        let environment = attestation_module.getattr("Environment")?;
+    let token = String::from_utf8(output.stdout)?;
 
-        attestation_instance.call_method1(
-            "add_verifier",
-            (
-                devices.getattr("GPU")?,
-                environment.getattr("LOCAL")?,
-                "",
-                "",
-            ),
-        )?;
-
-        let result: bool = attestation_instance.call_method0("attest")?.extract()?;
-        let token: Option<String> = attestation_instance.call_method0("get_token")?.extract()?;
-
-        if result {
-            match token {
-                Some(t) => Ok(t),
-                None => Err(anyhow::anyhow!("Failed to obtain evidence token")),
-            }
-        } else {
-            Err(anyhow::anyhow!("Attestation failed"))
-        }
-    })
+    Ok(token.trim().to_string())
 }
 
 #[cfg(test)]
