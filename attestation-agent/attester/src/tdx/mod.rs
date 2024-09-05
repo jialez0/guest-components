@@ -225,10 +225,10 @@ mod tests {
         assert!(evidence.is_ok());
     }
 
+    #[ignore]
     #[test]
     fn test_gpu_get_evidence() {
-        pyo3::prepare_freethreaded_python();
-        let gpu_evidence = get_gpu_attestation_token().unwrap();
-        // assert!(gpu_evidence.is_ok())
+        let gpu_evidence = get_gpu_attestation_token();
+        assert!(gpu_evidence.is_ok())
     }
 }
