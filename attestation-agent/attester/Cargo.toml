@@ -28,6 +28,7 @@ sev = { version = "3.1.1", default-features = false, features = [
 ], optional = true }
 sha2.workspace = true
 strum.workspace = true
+sysinfo_rs = { version = "0.1.7", optional = true }
 tdx-attest-rs = { git = "https://github.com/intel/SGXDataCenterAttestationPrimitives", tag = "DCAP_1.21", optional = true }
 thiserror.workspace = true
 # TODO: change it to "0.1", once released.
@@ -36,7 +37,9 @@ codicon = { version = "3.0", optional = true }
 hyper = { version = "0.14", features = ["full"], optional = true }
 hyper-tls = { version = "0.5", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
+tonic = { version = "0.12.2", optional = true }
 tempfile = { workspace = true, optional = true }
+protobuf = { version = "3.5.0", optional = true }
 
 [dev-dependencies]
 tokio.workspace = true
@@ -54,6 +57,7 @@ all-attesters = [
     "snp-attester",
     "cca-attester",
     "se-attester",
+    "system-attester",
 ]
 
 # tsm-report enables a module that helps attesters to use Linux TSM_REPORTS for generating
@@ -68,5 +72,6 @@ snp-attester = ["sev"]
 csv-attester = ["csv-rs", "codicon", "hyper", "hyper-tls", "tokio"]
 cca-attester = ["nix"]
 se-attester  = ["pv"]
+system-attester = ["tokio", "lazy_static", "sysinfo_rs"]
 
 bin = ["tokio/rt", "tokio/macros", "clap"]

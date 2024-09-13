@@ -36,6 +36,9 @@ pub mod tsm_report;
 #[cfg(feature = "se-attester")]
 pub mod se;
 
+#[cfg(feature = "system-attester")]
+pub mod system;
+
 pub type BoxedAttester = Box<dyn Attester + Send + Sync>;
 
 impl TryFrom<Tee> for BoxedAttester {
@@ -60,6 +63,8 @@ impl TryFrom<Tee> for BoxedAttester {
             Tee::Csv => Box::<csv::CsvAttester>::default(),
             #[cfg(feature = "se-attester")]
             Tee::Se => Box::<se::SeAttester>::default(),
+            #[cfg(feature = "system-attester")]
+            Tee::System => Box::new(system::SystemAttester::new()?),
             _ => bail!("TEE is not supported!"),
         };
 
@@ -134,6 +139,11 @@ pub fn detect_tee_type() -> Tee {
     #[cfg(feature = "se-attester")]
     if se::detect_platform() {
         return Tee::Se;
+    }
+
+    #[cfg(feature = "system-attester")]
+    if system::detect_platform() {
+        return Tee::System;
     }
 
     log::warn!("No TEE platform detected. Sample Attester will be used.");

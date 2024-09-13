@@ -9,7 +9,7 @@ RUN curl https://download.01.org/intel-sgx/sgx-dcap/1.21/linux/distro/Anolis86/s
     tar zxvf sgx_rpm_local_repo.tgz && \
     yum -y install yum-utils && yum-config-manager --add-repo file:///tmp/sgx_rpm_local_repo && \
     yum -y install epel-release && \
-    yum install -y --setopt=install_weak_deps=False --nogpgcheck libtdx-attest-devel perl wget curl clang openssl-devel protobuf-devel git python38 python38-pip python38-devel && \
+    yum install -y --setopt=install_weak_deps=False --nogpgcheck libtdx-attest-devel perl wget curl clang openssl-devel protobuf-devel git python38 python38-pip python38-devel libudev-devel && \
     yum clean all && \
     rm -rf /tmp/*
 
@@ -29,7 +29,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup toolchain install 1.79.0-x86_64-unknown-linux-gnu
 
 # Build attestation-agent. Notice that libc version is not enough thus --release cannot pass
-RUN cargo +1.79.0 build -p attestation-agent --bin ttrpc-aa --no-default-features --features bin,ttrpc,rust-crypto,coco_as,kbs,tdx-attester --target x86_64-unknown-linux-gnu
+RUN cargo +1.79.0 build -p attestation-agent --bin ttrpc-aa --no-default-features --features bin,ttrpc,rust-crypto,coco_as,kbs,tdx-attester,system-attester --target x86_64-unknown-linux-gnu
 
 RUN strip target/x86_64-unknown-linux-gnu/debug/ttrpc-aa
 
@@ -40,7 +40,7 @@ RUN curl https://download.01.org/intel-sgx/sgx-dcap/1.21/linux/distro/Anolis86/s
     tar zxvf sgx_rpm_local_repo.tgz && \
     yum -y install yum-utils && yum-config-manager --add-repo file:///tmp/sgx_rpm_local_repo && \
     yum -y install epel-release && \
-    yum install -y --setopt=install_weak_deps=False --nogpgcheck libtdx-attest-devel python38 python38-pip python38-devel && \
+    yum install -y --setopt=install_weak_deps=False --nogpgcheck libtdx-attest-devel python38 python38-pip python38-devel libudev-devel && \
     yum clean all && \
     rm -rf /tmp/*
 

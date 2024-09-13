@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package system_attesterd;
+
+message MeasureRequest {
+    bytes data = 1;
+    string name = 2;
+}
+
+message GetMeasurementsResponse {
+    string measurements = 1;
+}
+
+message ReadMrRegisterResponse {
+    string register_value = 1;
+}
+
+message ReadSysReportResponse {
+    string report = 1;
+}
+
+message Empty {}
+
+service SystemAttesterdService {
+    rpc Measure(MeasureRequest) returns (Empty) {};
+    rpc GetMeasurements(Empty) returns (GetMeasurementsResponse) {};
+    rpc ReadMrRegister(Empty) returns (ReadMrRegisterResponse) {};
+    rpc ReadSysReport(Empty) returns (ReadSysReportResponse) {};
+}
