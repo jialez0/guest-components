@@ -9,12 +9,6 @@ use kbs_types::Tee;
 pub mod sample;
 pub mod utils;
 
-#[cfg(feature = "az-snp-vtpm-attester")]
-pub mod az_snp_vtpm;
-
-#[cfg(feature = "az-tdx-vtpm-attester")]
-pub mod az_tdx_vtpm;
-
 #[cfg(feature = "cca-attester")]
 pub mod cca;
 
@@ -48,10 +42,6 @@ impl TryFrom<Tee> for BoxedAttester {
             Tee::Tdx => Box::<tdx::TdxAttester>::default(),
             #[cfg(feature = "sgx-attester")]
             Tee::Sgx => Box::<sgx_dcap::SgxDcapAttester>::default(),
-            #[cfg(feature = "az-snp-vtpm-attester")]
-            Tee::AzSnpVtpm => Box::<az_snp_vtpm::AzSnpVtpmAttester>::default(),
-            #[cfg(feature = "az-tdx-vtpm-attester")]
-            Tee::AzTdxVtpm => Box::<az_tdx_vtpm::AzTdxVtpmAttester>::default(),
             #[cfg(feature = "cca-attester")]
             Tee::Cca => Box::<cca::CCAAttester>::default(),
             #[cfg(feature = "snp-attester")]
@@ -104,16 +94,6 @@ pub fn detect_tee_type() -> Tee {
     #[cfg(feature = "sgx-attester")]
     if sgx_dcap::detect_platform() {
         return Tee::Sgx;
-    }
-
-    #[cfg(feature = "az-tdx-vtpm-attester")]
-    if az_tdx_vtpm::detect_platform() {
-        return Tee::AzTdxVtpm;
-    }
-
-    #[cfg(feature = "az-snp-vtpm-attester")]
-    if az_snp_vtpm::detect_platform() {
-        return Tee::AzSnpVtpm;
     }
 
     #[cfg(feature = "snp-attester")]

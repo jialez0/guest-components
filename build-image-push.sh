@@ -1,5 +1,8 @@
 #!/bin/bash
-REPO_PREFIX=registry.cn-hangzhou.aliyuncs.com/lxx/trustiflux
+REPO_PREFIX=registry.cn-beijing.aliyuncs.com/lxx/trustiflux
 
-docker build -t $REPO_PREFIX:confidential-data-hub-20240821 -f Dockerfile.cdh . --push
-# docker build -t $REPO_PREFIX:attestation-agent -f Dockerfile.aa . --push
+# e.g. 20240903
+tag=$(date +%Y%m%d)
+
+docker build -t $REPO_PREFIX:confidential-data-hub-${tag} -t $REPO_PREFIX:confidential-data-hub-latest -f Dockerfile.cdh . --push
+docker build -t $REPO_PREFIX:attestation-agent-${tag} -t $REPO_PREFIX:attestation-agent-latest -f Dockerfile.aa . --push

@@ -1,3 +1,0 @@
-docker:
-  example.com:
-    sigstore: file:///var/lib/containers/sigstore
