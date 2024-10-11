@@ -1,0 +1,32 @@
+name: Rust CI Suites
+
+triggers:
+  push:
+    branches:
+      - '**'
+  merge_request:
+    target-branches:
+      - '**'
+
+jobs:
+  test-job:
+    image: alios-8u
+    steps:
+      - uses: checkout
+      - uses: setup-env
+        inputs:
+          rust-toolchain-version: stable
+      - run: |
+          cd /tmp
+          curl https://download.01.org/intel-sgx/sgx-dcap/1.21/linux/distro/Anolis86/sgx_rpm_local_repo.tgz --output sgx_rpm_local_repo.tgz && \
+          tar zxvf sgx_rpm_local_repo.tgz && \
+          yum-config-manager --add-repo file:///tmp/sgx_rpm_local_repo && \
+          yum -y install epel-release && \
+          yum install -y --setopt=install_weak_deps=False --nogpgcheck libtdx-attest-devel perl protobuf-devel && \
+          yum clean all && \
+          rm -rf /tmp/*
+      - run:
+          - cargo update
+          - cargo fmt --all -- --check
+          - cargo clippy -- -D warnings
+          - cargo test -p attestation-agent -p confidential-data-hub
