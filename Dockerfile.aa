@@ -2,7 +2,7 @@
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
 
-FROM openanolis/anolisos:latest as builder
+FROM registry.cn-hangzhou.aliyuncs.com/lxx/trustiflux:anolisos-latest as builder
 
 WORKDIR /tmp
 RUN curl https://download.01.org/intel-sgx/sgx-dcap/1.21/linux/distro/Anolis86/sgx_rpm_local_repo.tgz --output sgx_rpm_local_repo.tgz && \
@@ -28,7 +28,7 @@ RUN cargo +1.79.0 build -p attestation-agent --bin ttrpc-aa --no-default-feature
 
 RUN strip target/x86_64-unknown-linux-gnu/debug/ttrpc-aa
 
-FROM openanolis/anolisos:latest
+FROM registry.cn-hangzhou.aliyuncs.com/lxx/trustiflux:anolisos-latest
 
 WORKDIR /tmp
 RUN curl https://download.01.org/intel-sgx/sgx-dcap/1.21/linux/distro/Anolis86/sgx_rpm_local_repo.tgz --output sgx_rpm_local_repo.tgz && \
