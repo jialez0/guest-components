@@ -160,8 +160,9 @@ mod tests {
     use anyhow::anyhow;
     use rstest::rstest;
 
-    use crate::{config::DEFAULT_CDH_SOCKET_ADDR, CdhConfig, KbsConfig};
+    use crate::config::{CdhConfig, KbsConfig, DEFAULT_CDH_SOCKET_ADDR};
 
+    #[rstest]
     #[case(
         r#"
 [kbc]
