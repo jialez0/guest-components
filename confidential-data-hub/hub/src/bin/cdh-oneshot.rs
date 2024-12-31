@@ -94,6 +94,7 @@ struct PullImageArgs {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     let args = Cli::parse();
     let config = CdhConfig::new(args.config).expect("failed to initialize cdh config");
     config.set_configuration_envs();

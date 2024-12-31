@@ -8,20 +8,31 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-az-snp-vtpm = { version = "0.7.1", default-features = false, features = ["attester"], optional = true }
-az-tdx-vtpm = { version = "0.7.0", default-features = false, features = ["attester"], optional = true }
+az-snp-vtpm = { version = "0.7.1", default-features = false, features = [
+    "attester",
+], optional = true }
+az-tdx-vtpm = { version = "0.7.0", default-features = false, features = [
+    "attester",
+], optional = true }
 base64.workspace = true
 clap = { workspace = true, features = ["derive"], optional = true }
 hex.workspace = true
 kbs-types.workspace = true
 log.workspace = true
+nix = { workspace = true, optional = true, default-features = false }
 occlum_dcap = { git = "https://github.com/occlum/occlum", tag = "v0.29.7", optional = true }
+pnet = { version = "0.35.0", optional = true }
 pv = { version = "0.10.0", package = "s390_pv", optional = true }
-scroll = { version = "0.12.0", default-features = false, features = ["derive", "std"], optional = true }
+scroll = { version = "0.12.0", default-features = false, features = [
+    "derive",
+    "std",
+], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 serde_with.workspace = true
-sev = { version = "4.0.0", default-features = false, features = ["snp"], optional = true }
+sev = { version = "4.0.0", default-features = false, features = [
+    "snp",
+], optional = true }
 sha2.workspace = true
 strum.workspace = true
 tdx-attest-rs = { git = "https://github.com/intel/SGXDataCenterAttestationPrimitives", tag = "DCAP_1.22", optional = true }
@@ -33,6 +44,7 @@ hyper = { version = "0.14", features = ["full"], optional = true }
 hyper-tls = { version = "0.5", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 tempfile = { workspace = true, optional = true }
+udev = { version = "0.9.1", optional = true }
 
 [dev-dependencies]
 tokio.workspace = true
@@ -53,6 +65,7 @@ all-attesters = [
     "csv-attester",
     "cca-attester",
     "se-attester",
+    "system-attester",
 ]
 
 # tsm-report enables a module that helps attesters to use Linux TSM_REPORTS for generating
@@ -66,6 +79,7 @@ az-tdx-vtpm-attester = ["az-snp-vtpm-attester", "az-tdx-vtpm"]
 snp-attester = ["sev"]
 csv-attester = ["csv-rs", "codicon", "hyper", "hyper-tls", "tokio"]
 cca-attester = ["tsm-report"]
-se-attester  = ["pv"]
+se-attester = ["pv"]
+system-attester = ["nix/feature", "pnet", "udev"]
 
 bin = ["tokio/rt", "tokio/macros", "clap"]
