@@ -31,7 +31,8 @@ impl TeeKeyPair {
         let k_mod = URL_SAFE_NO_PAD.encode(self.keypair.n());
         let k_exp = URL_SAFE_NO_PAD.encode(self.keypair.e());
 
-        Ok(TeePubKey::RSA {
+        Ok(TeePubKey {
+            kty: "RSA".to_string(),
             alg: PaddingMode::PKCS1v15.as_ref().to_string(),
             k_mod,
             k_exp,

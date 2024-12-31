@@ -85,7 +85,7 @@ async fn build_request(tee: Tee) -> Request {
     Request {
         version: String::from(KBS_PROTOCOL_VERSION),
         tee,
-        extra_params,
+        extra_params: extra_params.to_string(),
     }
 }
 
@@ -188,6 +188,7 @@ impl KbsClient<Box<dyn EvidenceProvider>> {
 
         let extra_params = challenge.extra_params;
 
+        let extra_params = serde_json::from_str(&extra_params)?;
         let algorithm = get_hash_algorithm(extra_params)?;
 
         let tee_pubkey = self.tee_key.export_pubkey()?;
