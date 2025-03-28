@@ -101,6 +101,7 @@ hygon-dcu-attester = [
 ]
 system-attester = ["kbs_protocol?/system-attester", "attester/system-attester"]
 tpm-attester = ["kbs_protocol?/tpm-attester", "attester/tpm-attester"]
+csv-attester = ["kbs_protocol?/csv-attester", "attester/csv-attester"]
 
 # Either `rust-crypto` or `openssl` should be enabled to work as underlying crypto module
 rust-crypto = ["kbs_protocol?/rust-crypto"]
