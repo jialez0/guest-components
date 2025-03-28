@@ -4,7 +4,7 @@ Documentation=https://confidentialcontainers.org
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/attestation-agent --config-file /etc/trustiflux/attestation-agent.toml -a unix:///run/confidential-containers/attestation-agent/attestation-agent.sock
+ExecStart=/usr/local/bin/attestation-agent --config-file /etc/trustiflux/attestation-agent.toml -a unix:///run/confidential-containers/attestation-agent/attestation-agent.sock
 Environment=RUST_LOG=debug
 Restart=always
 RestartSec=5
