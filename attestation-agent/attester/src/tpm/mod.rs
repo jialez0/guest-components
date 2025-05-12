@@ -12,7 +12,7 @@ use rsa::pkcs8::EncodePublicKey;
 use std::collections::HashMap;
 use std::path::Path;
 
-mod utils;
+pub mod utils;
 
 const TPM_EVENTLOG_FILE_PATH: &str = "/sys/kernel/security/tpm0/binary_bios_measurements";
 const DEFAULT_AA_EVENTLOG_PATH: &str = "/run/attestation-agent/eventlog";
