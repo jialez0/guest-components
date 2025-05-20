@@ -11,7 +11,7 @@ use rsa as rust_rsa;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tss_esapi::abstraction::{
-    ak::{create_ak, load_ak},
+    ak::{create_ak},
     ek::{create_ek_object, retrieve_ek_pubcert},
     pcr,
     public::DecodedKey,
@@ -19,9 +19,15 @@ use tss_esapi::abstraction::{
 };
 use tss_esapi::attributes::SessionAttributesBuilder;
 use tss_esapi::constants::SessionType;
-use tss_esapi::handles::PcrHandle;
+use tss_esapi::handles::{PcrHandle, TpmHandle, PersistentTpmHandle};
 use tss_esapi::interface_types::algorithm::{
     AsymmetricAlgorithm, HashingAlgorithm, SignatureSchemeAlgorithm,
+};
+use tss_esapi::{
+    interface_types::{
+        resource_handles::Provision,
+        dynamic_handles::Persistent,
+    },
 };
 use tss_esapi::interface_types::key_bits::RsaKeyBits;
 use tss_esapi::structures::digest_values::DigestValues;
@@ -59,6 +65,12 @@ const TPM_QUOTE_PCR_SLOTS: [PcrSlot; 24] = [
     PcrSlot::Slot22,
     PcrSlot::Slot23,
 ];
+
+// AK persistent handle constant
+// 0x81: indicates persistent handle
+// 0x03: indicates this is an AK (Attestation Key)
+// 0x0000: instance offset
+const PERSISTENT_AK_HANDLE: u32 = 0x81030000;
 
 pub fn create_tcti() -> Result<TctiNameConf> {
     match std::env::var("TEST_TCTI") {
@@ -182,8 +194,24 @@ pub struct AttestationKey {
     pub ak_public: Public,
 }
 
-pub fn generate_rsa_ak() -> Result<AttestationKey> {
+pub fn generate_rsa_ak() -> Result<()> {
     let mut context = create_ctx_without_session()?;
+
+    // First try to load existing persistent AK
+    let presistend_ak_handle = PersistentTpmHandle::new(PERSISTENT_AK_HANDLE)?;
+    match context.tr_from_tpm_public(TpmHandle::try_from(PERSISTENT_AK_HANDLE)?) {
+        Result::Ok(persistent_handle) => {
+            // AK already exists, clear the existing AK
+            context.evict_control(
+                Provision::Owner,
+                persistent_handle.into(),
+                Persistent::Persistent(presistend_ak_handle),
+            )?;
+        }
+        Result::Err(_) => {
+            // AK doesn't exist, continue to create new AK
+        }
+    }
 
     let ek_handle = create_ek_object(&mut context, AsymmetricAlgorithm::Rsa, DefaultKey)?;
 
@@ -196,23 +224,29 @@ pub fn generate_rsa_ak() -> Result<AttestationKey> {
         DefaultKey,
     )?;
 
-    Ok(AttestationKey {
-        ak_private: ak.out_private,
-        ak_public: ak.out_public,
-    })
+    // Load AK first
+    let loaded_ak_handle = context.load(
+        ek_handle,
+        ak.out_private.clone(),
+        ak.out_public.clone(),
+    )?;
+    // Persist AK
+    context.evict_control(
+        Provision::Owner,
+        loaded_ak_handle.into(),
+        Persistent::Persistent(presistend_ak_handle),
+    )?;
+
+    Ok(())
 }
 
-pub fn get_ak_pub(ak: AttestationKey) -> Result<rust_rsa::RsaPublicKey> {
+pub fn get_ak_pub() -> Result<rust_rsa::RsaPublicKey> {
     let mut context = create_ctx_without_session()?;
-    let ek_handle = create_ek_object(&mut context, AsymmetricAlgorithm::Rsa, DefaultKey)?;
-    let key_handle = load_ak(
-        &mut context,
-        ek_handle,
-        None,
-        ak.clone().ak_private,
-        ak.clone().ak_public,
-    )?;
-    let (pk, _, _) = context.read_public(key_handle)?;
+    let presistend_ak_handle = TpmHandle::try_from(PERSISTENT_AK_HANDLE)?;
+    let ak_handle = context
+        .tr_from_tpm_public(presistend_ak_handle)
+        .map_err(|_| anyhow!("AK handle not found, maybe not be generated yet"))?;
+    let (pk, _, _) = context.read_public(ak_handle.into())?;
 
     let decoded_key: DecodedKey = pk.try_into()?;
     let DecodedKey::RsaPublicKey(rsa_pk) = decoded_key else {
@@ -238,27 +272,26 @@ pub struct TpmQuote {
     pub pcrs: Vec<String>,
 }
 
-pub fn get_quote(
-    attest_key: AttestationKey,
-    report_data: &[u8],
-    pcr_algorithm: &str,
-) -> Result<TpmQuote> {
+pub fn get_quote(report_data: &[u8], pcr_algorithm: &str) -> Result<TpmQuote> {
     let mut context = create_ctx_with_session()?;
+    let presistend_ak_handle = TpmHandle::try_from(PERSISTENT_AK_HANDLE)?;
 
-    let ek_handle = create_ek_object(&mut context, AsymmetricAlgorithm::Rsa, DefaultKey)?;
-    let ak_handle = load_ak(
-        &mut context,
-        ek_handle,
-        None,
-        attest_key.ak_private,
-        attest_key.ak_public,
-    )?;
+    // If the AK does not exist, call generate_rsa_ak to create a new one
+    let ak_handle = match context.tr_from_tpm_public(presistend_ak_handle) {
+        Result::Ok(handle) => handle,
+        Result::Err(_) => {
+            let _ = generate_rsa_ak()?;
+            context
+                .tr_from_tpm_public(presistend_ak_handle)
+                .map_err(|_| anyhow!("AK handle not found, maybe generate_rsa_ak failed"))?
+        }
+    };
 
     let selection_list = create_pcr_selection_list(pcr_algorithm)?;
 
     let (attest, signature) = context
         .quote(
-            ak_handle,
+            ak_handle.into(),
             report_data.to_vec().try_into()?,
             SignatureScheme::Null,
             selection_list.clone(),
@@ -281,4 +314,133 @@ pub fn get_quote(
         attest_sig: engine.encode(rsa_sig.signature().to_vec()),
         pcrs: dump_pcrs(pcr_algorithm)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::result::Result::Ok;
+    use rsa::traits::PublicKeyParts;
+    use tss_esapi::tcti_ldr::TctiNameConf;
+    use serial_test::serial;
+
+    // Helper function to check if TPM is available
+    fn is_tpm_available() -> bool {
+        match create_tcti() {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_tcti() {
+        if !is_tpm_available() {
+            println!("Skipping test_create_tcti: TPM not available");
+            return;
+        }
+
+        let tcti = create_tcti().unwrap();
+        assert!(matches!(tcti, TctiNameConf::Device(_)));
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_ctx_without_session() {
+        if !is_tpm_available() {
+            println!("Skipping test_create_ctx_without_session: TPM not available");
+            return;
+        }
+
+        let ctx = create_ctx_without_session().unwrap();
+        // Success if we can create it
+        assert!(!std::ptr::eq(&ctx, std::ptr::null()));
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_ctx_with_session() {
+        if !is_tpm_available() {
+            println!("Skipping test_create_ctx_with_session: TPM not available");
+            return;
+        }
+
+        let ctx = create_ctx_with_session().unwrap();
+        // Success if we can create it
+        assert!(!std::ptr::eq(&ctx, std::ptr::null()));
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_pcr_selection_list() {
+        if !is_tpm_available() {
+            println!("Skipping test_create_pcr_selection_list: TPM not available");
+            return;
+        }
+
+        let selection_list = create_pcr_selection_list("SHA256").unwrap();
+        // Since count method doesn't exist, we use other ways to verify
+        assert_eq!(selection_list.len(), 1); // Should have only one selection (SHA256)
+    }
+
+    #[test]
+    #[serial]
+    fn test_dump_pcrs() {
+        if !is_tpm_available() {
+            println!("Skipping test_dump_pcrs: TPM not available");
+            return;
+        }
+
+        let pcrs = dump_pcrs("SHA256").unwrap();
+        assert_eq!(pcrs.len(), 24);
+        for pcr in pcrs {
+            assert_eq!(pcr.len(), 64); // SHA256 hash is 32 bytes = 64 hex chars
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_generate_rsa_ak() {
+        if !is_tpm_available() {
+            println!("Skipping test_generate_rsa_ak: TPM not available");
+            return;
+        }
+
+        // Test AK generation
+        generate_rsa_ak().unwrap();
+
+        // Verify AK was successfully generated
+        let ak_pub = get_ak_pub().unwrap();
+        assert!(ak_pub.n().bits() >= 2048); // Verify key length is at least 2048 bits
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_quote() {
+        if !is_tpm_available() {
+            println!("Skipping test_get_quote: TPM not available");
+            return;
+        }
+
+        let report_data = vec![0u8; 32]; // 32 bytes of test data
+        let quote = get_quote(&report_data, "SHA256").unwrap();
+
+        // Verify each field of the quote
+        assert!(!quote.attest_body.is_empty());
+        assert!(!quote.attest_sig.is_empty());
+        assert_eq!(quote.pcrs.len(), 24);
+    }
+
+    #[test]
+    #[serial]
+    fn test_dump_ek_cert_pem() {
+        if !is_tpm_available() {
+            println!("Skipping test_dump_ek_cert_pem: TPM not available");
+            return;
+        }
+
+        let cert = dump_ek_cert_pem().unwrap();
+        assert!(cert.starts_with("-----BEGIN CERTIFICATE-----"));
+        assert!(cert.ends_with("-----END CERTIFICATE-----\n"));
+    }
 }

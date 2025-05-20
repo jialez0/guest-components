@@ -170,9 +170,11 @@ impl AttestationAPIs for AttestationAgent {
             }
             #[cfg(feature = "tpm_credential")]
             token::TokenType::TpmCredential => {
-                token::tpm_credential::TpmCredentialGetter::new(&self.config.read().await.token_configs.kbs)
-                    .get_token()
-                    .await
+                token::tpm_credential::TpmCredentialGetter::new(
+                    &self.config.read().await.token_configs.kbs,
+                )
+                .get_token()
+                .await
             }
         }
     }
