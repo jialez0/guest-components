@@ -359,7 +359,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "serial_test",
+ "serial_test 3.2.0",
  "sha2 0.10.8",
  "strum",
  "tempfile",
@@ -405,6 +405,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "serial_test 0.9.0",
  "sev 4.0.0",
  "sha2 0.10.8",
  "strum",
@@ -1160,7 +1161,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "serial_test",
+ "serial_test 3.2.0",
  "sev 0.1.0",
  "sha2 0.10.8",
  "strum",
@@ -1637,6 +1638,19 @@ dependencies = [
  "darling_core 0.20.10",
  "quote",
  "syn 2.0.87",
+]
+
+[[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.3",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -3065,7 +3079,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "serial_test",
+ "serial_test 3.2.0",
  "sha2 0.10.8",
  "sigstore",
  "strum",
@@ -3456,7 +3470,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "serial_test",
+ "serial_test 3.2.0",
  "sha2 0.10.8",
  "tempfile",
  "testcontainers",
@@ -6035,6 +6049,20 @@ dependencies = [
 
 [[package]]
 name = "serial_test"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92761393ee4dc3ff8f4af487bd58f4307c9329bbedea02cac0089ad9c411e153"
+dependencies = [
+ "dashmap",
+ "futures",
+ "lazy_static",
+ "log",
+ "parking_lot",
+ "serial_test_derive 0.9.0",
+]
+
+[[package]]
+name = "serial_test"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b258109f244e1d6891bf1053a55d63a5cd4f8f4c30cf9a1280989f80e7a1fa9"
@@ -6044,7 +6072,19 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "scc",
- "serial_test_derive",
+ "serial_test_derive 3.2.0",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b6f5d1c3087fb119617cff2966fe3808a80e5eb59a8c1601d5994d66f4346a5"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
