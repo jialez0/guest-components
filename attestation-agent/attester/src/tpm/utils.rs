@@ -2,13 +2,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 //
+use crate::types::TpmQuote;
 use anyhow::Context;
 use anyhow::*;
 use base64::Engine;
 use num_traits::cast::FromPrimitive;
 use openssl::x509::X509;
 use rsa as rust_rsa;
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tss_esapi::abstraction::{
     ak::{create_ak, load_ak},
@@ -226,16 +226,6 @@ pub fn get_ak_pub(ak: AttestationKey) -> Result<rust_rsa::RsaPublicKey> {
 
     let pkey = rust_rsa::RsaPublicKey::new(n, e)?;
     Ok(pkey)
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize)]
-pub struct TpmQuote {
-    // Base64 encoded
-    attest_body: String,
-    // Base64 encoded
-    attest_sig: String,
-    // PCRs
-    pub pcrs: Vec<String>,
 }
 
 pub fn get_quote(

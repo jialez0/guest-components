@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 use crate::tpm::utils::*;
+use crate::types::TpmEvidence;
 use crate::Attester;
 use anyhow::*;
 use base64::Engine;
 use rsa as rust_rsa;
 use rsa::pkcs8::EncodePublicKey;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -17,20 +17,6 @@ mod utils;
 const TPM_EVENTLOG_FILE_PATH: &str = "/sys/kernel/security/tpm0/binary_bios_measurements";
 const DEFAULT_AA_EVENTLOG_PATH: &str = "/run/attestation-agent/eventlog";
 const TPM_REPORT_DATA_SIZE: usize = 64;
-
-#[derive(Serialize, Deserialize)]
-pub struct TpmEvidence {
-    // PEM format of EK certificate
-    pub ek_cert: Option<String>,
-    // PEM format of AK public key
-    pub ak_pubkey: String,
-    // TPM Quote (Contained PCRs)
-    pub quote: HashMap<String, TpmQuote>,
-    // Base64 encoded Eventlog ACPI table
-    pub eventlog: Option<String>,
-    // AA Eventlog
-    pub aa_eventlog: Option<String>,
-}
 
 pub fn detect_platform() -> bool {
     Path::new("/dev/tpm0").exists()
