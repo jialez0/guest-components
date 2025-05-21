@@ -4,7 +4,7 @@
 //
 
 use anyhow::*;
-use attester::tpm::TpmEvidence;
+use attester::types::TpmEvidence;
 use base64::Engine;
 
 pub fn parse_tpm_ev(evidence: String) -> Result<String> {
