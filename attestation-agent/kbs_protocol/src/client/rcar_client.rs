@@ -210,13 +210,17 @@ impl KbsClient<Box<dyn EvidenceProvider>> {
         };
 
         debug!("send attest request.");
-        let attest_response = self
+        let mut request_builder = self
             .http_client
             .post(attest_endpoint)
-            .header("Content-Type", "application/json")
-            .json(&attest)
-            .send()
-            .await?;
+            .header("Content-Type", "application/json");
+
+        // Add AAInstanceInfo header if the environment variable is set
+        if let Ok(aa_instance_info) = std::env::var("AA_INSTANCE_INFO") {
+            request_builder = request_builder.header("AAInstanceInfo", aa_instance_info);
+        }
+
+        let attest_response = request_builder.json(&attest).send().await?;
 
         match attest_response.status() {
             reqwest::StatusCode::OK => {
