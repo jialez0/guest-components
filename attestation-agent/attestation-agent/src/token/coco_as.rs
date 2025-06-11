@@ -36,12 +36,16 @@ impl GetToken for CoCoASTokenGetter {
 
         let client = reqwest::Client::new();
         let attest_endpoint = format!("{}/attestation", self.as_uri);
-        let res = client
+        let mut request_builder = client
             .post(attest_endpoint)
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await?;
+            .header("Content-Type", "application/json");
+
+        // Add AAInstanceInfo header if the environment variable is set
+        if let Result::Ok(aa_instance_info) = std::env::var("AA_INSTANCE_INFO") {
+            request_builder = request_builder.header("AAInstanceInfo", aa_instance_info);
+        }
+
+        let res = request_builder.json(&request_body).send().await?;
 
         match res.status() {
             reqwest::StatusCode::OK => {
