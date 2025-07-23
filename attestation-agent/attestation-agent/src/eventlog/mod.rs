@@ -56,9 +56,22 @@ impl Writer for FileWriter {
 impl EventLog {
     pub async fn new(
         rtmr_extender: Arc<BoxedAttester>,
-        alg: HashAlgorithm,
+        hash_algorithm: HashAlgorithm,
         pcr: u64,
     ) -> Result<Self> {
+        let rtmr = rtmr_extender
+            .get_runtime_measurement(pcr)
+            .await
+            .context("Get RTMR failed")?;
+
+        // Adjust hash_algorithm according to the length of rtmr to ensure consistency
+        let alg = match rtmr.len() {
+            32 => HashAlgorithm::Sha256,
+            48 => HashAlgorithm::Sha384,
+            64 => HashAlgorithm::Sha512,
+            _ => hash_algorithm, // If no matching algorithm, do not modify
+        };
+
         tokio::fs::create_dir_all(EVENTLOG_PARENT_DIR_PATH)
             .await
             .context("create eventlog parent dir")?;
@@ -89,11 +102,8 @@ impl EventLog {
                 return Ok(eventlog);
             }
 
-            let aael = AAEventlog::from_str(&content).context("Parse AAEL")?;
-            let rtmr = rtmr_extender
-                .get_runtime_measurement(pcr)
-                .await
-                .context("Get RTMR failed")?;
+            let mut aael = AAEventlog::from_str(&content).context("Parse AAEL")?;
+            aael.hash_algorithm = alg;
 
             // The integrity check might fail when previous AA record the entry into
             // aael but failed to extend RTMR. This check will try to catch this case

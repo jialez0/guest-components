@@ -29,7 +29,11 @@ pub struct TpmAttester {}
 impl Attester for TpmAttester {
     async fn get_evidence(&self, mut report_data: Vec<u8>) -> Result<String> {
         if report_data.len() > TPM_REPORT_DATA_SIZE {
-            log::warn!("TPM Attester: Report data truncated from {} to {} bytes", report_data.len(), TPM_REPORT_DATA_SIZE);
+            log::warn!(
+                "TPM Attester: Report data truncated from {} to {} bytes",
+                report_data.len(),
+                TPM_REPORT_DATA_SIZE
+            );
             report_data.truncate(TPM_REPORT_DATA_SIZE);
         }
         report_data.resize(TPM_REPORT_DATA_SIZE, 0);
