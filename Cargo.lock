@@ -3410,7 +3410,7 @@ dependencies = [
 [[package]]
 name = "kbs-types"
 version = "0.6.0"
-source = "git+https://github.com/inclavare-containers/kbs-types.git?rev=d881395#d8813950a035b037322cdcde53b2a9c9f513489b"
+source = "git+https://github.com/inclavare-containers/kbs-types.git?rev=1b4217f#1b4217f395023b6b33a32f1be6348b22ece5518c"
 dependencies = [
  "serde",
  "serde_json",
