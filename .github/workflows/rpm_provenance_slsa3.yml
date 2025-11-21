@@ -1,0 +1,179 @@
+name: Generate per-RPM SLSA provenance (per-file)
+
+on:
+  workflow_call:
+    inputs:
+      rpm-root:
+        description: "Root directory to search for RPM packages (default: workspace root)"
+        required: false
+        type: string
+        default: "."
+      private-repository:
+        description: "If true, allow posting provenance for private repositories to the public transparency log"
+        required: false
+        type: boolean
+        default: false
+      rekor-intoto-upload:
+        description: "If true, additionally upload provenance to Rekor using the intoto entry type so that payload bytes can be stored via attestation storage"
+        required: false
+        type: boolean
+        default: false
+      rekor-url:
+        description: "Rekor base URL to use for intoto uploads"
+        required: false
+        type: string
+        default: "https://rekor.sigstore.dev"
+
+jobs:
+  per-rpm-provenance:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write     # For keyless signing via OIDC
+      contents: write      # For reading repo metadata
+      actions: read       # For reading workflow path
+    env:
+      BUILDER_BINARY: slsa-generator-generic-linux-amd64
+      BUILDER_DIR: internal/builders/generic
+
+    steps:
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./
+          merge-multiple: false
+
+      - name: Install rpm tooling
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y rpm2cpio cpio
+
+      - name: Generate generic SLSA generator binary
+        uses: slsa-framework/slsa-github-generator/.github/actions/generate-builder@v2.1.0
+        with:
+          repository: "slsa-framework/slsa-github-generator"
+          ref: "refs/tags/v2.1.0"
+          go-version: "1.23.1"
+          binary: "${{ env.BUILDER_BINARY }}"
+          compile-builder: false
+          directory: "${{ env.BUILDER_DIR }}"
+          allow-private-repository: ${{ inputs.private-repository }}
+
+      - name: Generate per-RPM per-file provenance
+        env:
+          RPM_ROOT: ${{ inputs.rpm-root }}
+          # These are required by the generic SLSA builder binary.
+          GITHUB_CONTEXT: ${{ toJSON(github) }}
+          VARS_CONTEXT: ${{ toJSON(vars) }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          mkdir -p rpm-provenance
+
+          # Search for RPMs under RPM_ROOT, matching typical rpmbuild layout */RPMS/*/*.rpm.
+          mapfile -t rpms < <(find "$RPM_ROOT" -type f -path "*/RPMS/*/*.rpm" -print | sort)
+          if [ ${#rpms[@]} -eq 0 ]; then
+            echo "No RPMs found under $RPM_ROOT (pattern */RPMS/*/*.rpm)" >&2
+            exit 1
+          fi
+
+          for rpm in "${rpms[@]}"; do
+            echo "Processing RPM: $rpm"
+
+            workdir="$(mktemp -d)"
+            # Extract RPM contents into temporary directory.
+            rpm2cpio "$rpm" | (cd "$workdir" && cpio -idmv >/dev/null 2>&1)
+
+            subjects_txt="$workdir/subjects.txt"
+            : > "$subjects_txt"
+
+            pushd "$workdir" >/dev/null
+            # Generate sha256 for each file inside the RPM.
+            # Subject name format: "<rpm-basename>:<path-inside-rpm>"
+            while IFS= read -r -d '' f; do
+              rel="${f#./}"
+              sha="$(sha256sum "$f" | awk '{print $1}')"
+              echo "$sha  ${rpm##*/}:$rel" >> "$subjects_txt"
+            done < <(find . -type f -print0 | sort -z)
+            popd >/dev/null
+
+            # Additionally, generate a "name index hash" for the RPM package itself.
+            # Key name: "package-name"
+            # Key value: Hash("<package-basename>"), e.g. "attestation-agent-1.4.5-1.an23.x86_64.rpm".
+            # We reuse sha256 here and compute it over the exact package basename string.
+            pkg_name="${rpm##*/}"
+            pkg_hash="$(printf "%s" "$pkg_name" | sha256sum | awk '{print $1}')"
+            echo "$pkg_hash  package-name" >> "$subjects_txt"
+
+            if [ ! -s "$subjects_txt" ]; then
+              echo "No files found inside $rpm, skipping." >&2
+              rm -rf "$workdir"
+              continue
+            fi
+
+            subjects_b64_file="subjects.sha256sum.base64"
+            base64 -w0 "$subjects_txt" > "$subjects_b64_file"
+
+            rpm_base="$(basename "$rpm")"
+            prov_name="rpm-provenance/${rpm_base}.files.intoto.jsonl"
+
+            "$GITHUB_WORKSPACE/$BUILDER_BINARY" attest \
+              --subjects-filename "$subjects_b64_file" \
+              -g "$prov_name"
+
+            rm -rf "$workdir"
+          done
+
+          ls -l rpm-provenance
+
+      - name: Upload per-RPM provenance artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-provenance
+          path: rpm-provenance/*.intoto.jsonl
+          if-no-files-found: error
+
+      - name: Install rekor-cli for intoto uploads
+        if: inputs.rekor-intoto-upload
+        run: |
+          set -euo pipefail
+          REKOR_VERSION="v1.3.6"
+          curl -L "https://github.com/sigstore/rekor/releases/download/${REKOR_VERSION}/rekor-cli-linux-amd64" -o rekor-cli
+          chmod +x rekor-cli
+          sudo mv rekor-cli /usr/local/bin/rekor-cli
+
+      - name: Upload provenance to Rekor using intoto entries
+        if: inputs.rekor-intoto-upload
+        env:
+          REKOR_URL: ${{ inputs.rekor-url }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          cd rpm-provenance
+
+          for bundle in *.intoto.jsonl; do
+            echo "Processing provenance bundle: ${bundle}"
+
+            # Extract DSSE envelope from the Sigstore bundle (support both v0.3+ layouts)
+            jq '.dsseEnvelope // .content.dsseEnvelope' "${bundle}" > dsse-envelope.json
+
+            # Extract signing certificate (leaf cert) and convert to PEM.
+            # Prefer top-level certificate.rawBytes; fall back to x509CertificateChain[0].rawBytes if present.
+            jq -r '.verificationMaterial.certificate.rawBytes // .verificationMaterial.x509CertificateChain.certificates[0].rawBytes' "${bundle}" | base64 -d > cert.der
+            openssl x509 -inform DER -in cert.der -out cert.pem
+
+            # Upload an intoto entry which, when attestation storage is enabled on Rekor,
+            # stores the decoded DSSE payload bytes.
+            rekor-cli upload \
+              --rekor_server "${REKOR_URL}" \
+              --type intoto \
+              --public-key cert.pem \
+              --artifact dsse-envelope.json
+
+            rm -f dsse-envelope.json cert.der cert.pem
+          done
+
+
+
