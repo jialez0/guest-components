@@ -1,0 +1,116 @@
+name: Generate per-RPM SLSA provenance (per-file)
+
+on:
+  workflow_call:
+    inputs:
+      rpm-root:
+        description: "Directory containing RPM packages, relative to workspace (default: rpm-packages/RPMS)"
+        required: false
+        type: string
+        default: "rpm-packages/RPMS"
+      private-repository:
+        description: "If true, allow posting provenance for private repositories to the public transparency log"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  per-rpm-provenance:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write     # For keyless signing via OIDC
+      contents: write      # For reading repo metadata
+      actions: read       # For reading workflow path
+    env:
+      BUILDER_BINARY: slsa-generator-generic-linux-amd64
+      BUILDER_DIR: internal/builders/generic
+
+    steps:
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # Expect the build job to have uploaded RPMs as 'rpm-packages'
+          name: rpm-packages
+          path: .
+
+      - name: Install rpm tooling
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y rpm2cpio cpio
+
+      - name: Generate generic SLSA generator binary
+        uses: slsa-framework/slsa-github-generator/.github/actions/generate-builder@v2.1.0
+        with:
+          repository: "slsa-framework/slsa-github-generator"
+          ref: "refs/tags/v2.1.0"
+          go-version: "1.23.1"
+          binary: "${{ env.BUILDER_BINARY }}"
+          compile-builder: false
+          directory: "${{ env.BUILDER_DIR }}"
+          allow-private-repository: ${{ inputs.private-repository }}
+
+      - name: Generate per-RPM per-file provenance
+        env:
+          RPM_ROOT: ${{ inputs.rpm-root }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          mkdir -p rpm-provenance
+
+          rpms=("$RPM_ROOT"/*/*.rpm)
+          if [ ${#rpms[@]} -eq 0 ]; then
+            echo "No RPMs found under $RPM_ROOT" >&2
+            exit 1
+          fi
+
+          for rpm in "${rpms[@]}"; do
+            echo "Processing RPM: $rpm"
+
+            workdir="$(mktemp -d)"
+            # Extract RPM contents into temporary directory.
+            rpm2cpio "$rpm" | (cd "$workdir" && cpio -idmv >/dev/null 2>&1)
+
+            subjects_txt="$workdir/subjects.txt"
+            : > "$subjects_txt"
+
+            pushd "$workdir" >/dev/null
+            # Generate sha256 for each file inside the RPM.
+            # Subject name format: "<rpm-basename>:<path-inside-rpm>"
+            while IFS= read -r -d '' f; do
+              rel="${f#./}"
+              sha="$(sha256sum "$f" | awk '{print $1}')"
+              echo "$sha  ${rpm##*/}:$rel" >> "$subjects_txt"
+            done < <(find . -type f -print0 | sort -z)
+            popd >/dev/null
+
+            if [ ! -s "$subjects_txt" ]; then
+              echo "No files found inside $rpm, skipping." >&2
+              rm -rf "$workdir"
+              continue
+            fi
+
+            subjects_b64_file="subjects.sha256sum.base64"
+            base64 -w0 "$subjects_txt" > "$subjects_b64_file"
+
+            rpm_base="$(basename "$rpm")"
+            prov_name="rpm-provenance/${rpm_base}.files.intoto.jsonl"
+
+            "$GITHUB_WORKSPACE/$BUILDER_BINARY" attest \
+              --subjects-filename "$subjects_b64_file" \
+              -g "$prov_name"
+
+            rm -rf "$workdir"
+          done
+
+          ls -l rpm-provenance
+
+      - name: Upload per-RPM provenance artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-provenance
+          path: rpm-provenance/*.intoto.jsonl
+          if-no-files-found: error
+
+
