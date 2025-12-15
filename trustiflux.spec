@@ -23,12 +23,20 @@ A daemon service running inside TEE (Trusted Execution Environment) to confident
 
 %package -n attestation-agent
 Summary:	Attestation Agent is a daemon service running inside TEE (Trusted Execution Environment) to provide attestation related APIs.
+Requires: trustiflux-api-server = %{version}-%{release}
 
 %description -n attestation-agent
 Attestation Agent is a daemon service running inside TEE (Trusted Execution Environment) to provide attestation related APIs.
 
+%package -n trustiflux-api-server
+Summary:	REST API server exporting attestation and confidential data hub endpoints.
+
+%description -n trustiflux-api-server
+trustiflux-api-server exposes attestation-agent and confidential-data-hub ttRPC services over HTTP.
+
 %package -n confidential-data-hub
 Summary:	Confidential Data Hub is a daemon service running inside TEE (Trusted Execution Environment) to provide confidential resource related APIs.
+Requires: trustiflux-api-server = %{version}-%{release}
 
 %description -n confidential-data-hub
 Confidential Data Hub is a daemon service running inside TEE (Trusted Execution Environment) to provide confidential resource related APIs.
@@ -45,6 +53,9 @@ cargo build -p attestation-agent --bin ttrpc-aa-client --release --no-default-fe
 
 # building the confidential-data-hub
 cargo build -p confidential-data-hub --release --bin cdh-oneshot --no-default-features --features "bin,aliyun,kbs" --target x86_64-unknown-linux-gnu
+
+# building the api-server-rest
+cargo build -p api-server-rest --release --target x86_64-unknown-linux-gnu
 
 
 %install
@@ -74,6 +85,12 @@ install -m 644 dist/rpm/confidential-data-hub.toml %{buildroot}%{config_dir}/con
 install -d -p %{buildroot}%{_prefix}/bin
 install -m 755 target/x86_64-unknown-linux-gnu/release/cdh-oneshot %{buildroot}%{_prefix}/bin/confidential-data-hub
 
+# installing the api-server-rest
+install -d -p %{buildroot}%{libdir}/systemd/system
+install -m 644 dist/rpm/trustiflux-api-server.service %{buildroot}%{libdir}/systemd/system/trustiflux-api-server.service
+install -d -p %{buildroot}%{_prefix}/bin
+install -m 755 target/x86_64-unknown-linux-gnu/release/api-server-rest %{buildroot}%{_prefix}/bin/trustiflux-api-server
+
 # install dracut modules
 install -d -p %{buildroot}%{libdir}/dracut/modules.d/99confidential-data-hub
 install -m 755 dist/dracut/modules.d/99confidential-data-hub/module-setup.sh %{buildroot}%{libdir}/dracut/modules.d/99confidential-data-hub
@@ -94,6 +111,10 @@ rm -rf %{buildroot}
 %{libdir}/dracut/modules.d/99attestation-agent/attestation-agent.toml
 %{libdir}/dracut/modules.d/99attestation-agent/attestation-agent-platform-detect.sh
 %{libdir}/dracut/modules.d/99attestation-agent/attestation-agent-platform-detect.service
+
+%files -n trustiflux-api-server
+%{_bindir}/trustiflux-api-server
+%{libdir}/systemd/system/trustiflux-api-server.service
 
 %files -n confidential-data-hub
 %{_bindir}/confidential-data-hub

@@ -1,0 +1,26 @@
+# Multi-stage build for api-server-rest
+FROM rust:1.74-bullseye AS builder
+WORKDIR /workspace
+
+# Pre-fetch deps
+COPY Cargo.toml Cargo.lock ./
+COPY api-server-rest/Cargo.toml api-server-rest/Cargo.toml
+RUN mkdir -p api-server-rest/src && echo "fn main() {}" > api-server-rest/src/main.rs
+RUN cargo fetch
+
+# Build
+COPY . .
+RUN cargo build -p api-server-rest --release
+
+FROM debian:bullseye-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /workspace/target/release/api-server-rest /usr/bin/api-server-rest
+
+EXPOSE 8006
+ENV BIND=0.0.0.0:8006 \
+    FEATURES=all \
+    AA_ADDR=unix:///run/confidential-containers/attestation-agent/attestation-agent.sock \
+    CDH_ADDR=unix:///run/confidential-containers/cdh.sock
+
+CMD ["/bin/sh", "-c", "/usr/bin/api-server-rest --bind ${BIND} --features ${FEATURES} --aa_addr ${AA_ADDR} --cdh_addr ${CDH_ADDR}"]
+
