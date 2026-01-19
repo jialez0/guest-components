@@ -75,6 +75,7 @@ all-attesters = [
     "hygon-dcu-attester",
     "cca-attester",
     "se-attester",
+    "nvidia-attester",
     "system-attester",
     "tpm-attester",
 ]
@@ -101,6 +102,7 @@ hygon-dcu-attester = ["hygon"]
 hygon = ["csv-rs"]
 cca-attester = ["tsm-report"]
 se-attester = ["pv"]
+nvidia-attester = ["nvml-wrapper"]
 system-attester = ["nix/feature", "pnet", "udev"]
 tpm-attester = ["openssl", "rsa", "num-traits", "tss-esapi"]
 
