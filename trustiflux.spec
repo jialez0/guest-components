@@ -53,7 +53,7 @@ cargo build -p attestation-agent --bin ttrpc-aa-client --release --no-default-fe
 
 # building the confidential-data-hub
 cargo build -p confidential-data-hub --release --bin cdh-oneshot --no-default-features --features "bin,aliyun,kbs" --target x86_64-unknown-linux-gnu
-cargo build -p confidential-data-hub --release --bin ttrpc-cdh --no-default-features --features "bin,aliyun,kbs,ttrpc" --target x86_64-unknown-linux-gnu
+cargo build -p confidential-data-hub --release --bin ttrpc-cdh --no-default-features --features "bin,aliyun,kbs,resource_injection,ttrpc" --target x86_64-unknown-linux-gnu
 cargo build -p confidential-data-hub --release --bin ttrpc-cdh-tool --no-default-features --features "bin,ttrpc" --target x86_64-unknown-linux-gnu
 
 # building the api-server-rest

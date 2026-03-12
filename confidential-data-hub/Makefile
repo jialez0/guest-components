@@ -51,6 +51,12 @@ ifneq ($(RESOURCE_PROVIDER), none)
     features += $(RESOURCE_PROVIDER)
 endif
 
+ifneq ($(findstring kbs,$(RESOURCE_PROVIDER)),)
+ifneq ($(ONE_SHOT), true)
+    features += resource_injection
+endif
+endif
+
 ifneq ($(KMS_PROVIDER), none)
     features += $(KMS_PROVIDER)
 endif

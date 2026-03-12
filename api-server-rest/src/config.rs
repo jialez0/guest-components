@@ -27,6 +27,12 @@ pub struct ApiServerConfig {
 
     #[serde(default = "default_aa_socket")]
     pub aa_socket: String,
+
+    #[serde(default)]
+    pub allow_remote_get_evidence: bool,
+
+    #[serde(default)]
+    pub allow_remote_resource_injection: bool,
 }
 
 fn default_bind() -> String {

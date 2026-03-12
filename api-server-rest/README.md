@@ -8,9 +8,18 @@ CoCo guest components 使用轻量级 ttRPC 进行内部通信。`trustiflux-api
 bind = "0.0.0.0:8006"
 enable_cdh = true
 cdh_socket = "unix:///run/confidential-containers/cdh.sock"
+allow_remote_resource_injection = false
 enable_aa = true
 aa_socket = "unix:///run/confidential-containers/attestation-agent/attestation-agent.sock"
+allow_remote_get_evidence = false
 ```
+
+访问控制说明：
+
+- `allow_remote_get_evidence = true` 时，允许远程访问 `GET /aa/evidence`
+- `allow_remote_resource_injection = true` 时，允许远程访问 `POST /cdh/resource-injection/...`
+- `GET /cdh/resource/...` 始终只允许本地回环地址访问，不会被上述配置放开
+- 其他 `aa` 接口，例如 `GET /aa/token` 和 `POST /aa/aael`，仍然只允许本地访问
 
 启动示例（使用仓库自带配置）：
 

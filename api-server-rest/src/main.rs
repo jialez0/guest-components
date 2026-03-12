@@ -59,7 +59,11 @@ async fn main() -> Result<()> {
     if config.enable_cdh {
         router.register_route(
             CDH_ROOT,
-            Box::new(CDHClient::new(&config.cdh_socket, vec![Method::GET])?),
+            Box::new(CDHClient::new(
+                &config.cdh_socket,
+                vec![Method::GET, Method::POST],
+                config.allow_remote_resource_injection,
+            )?),
         );
     }
 
@@ -69,6 +73,7 @@ async fn main() -> Result<()> {
             Box::new(AAClient::new(
                 &config.aa_socket,
                 vec![Method::GET, Method::POST],
+                config.allow_remote_get_evidence,
             )?),
         );
     }
