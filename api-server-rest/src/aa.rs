@@ -36,6 +36,7 @@ struct AaelRequest {
 pub struct AAClient {
     client: AttestationAgentServiceClient,
     accepted_method: Vec<Method>,
+    allow_remote_get_evidence: bool,
 }
 
 #[async_trait]
@@ -46,11 +47,6 @@ impl ApiHandler for AAClient {
         url_path: &str,
         req: Request<Body>,
     ) -> Result<Response<Body>> {
-        if !remote_addr.ip().is_loopback() {
-            // Return 403 Forbidden response.
-            return self.forbidden();
-        }
-
         if !self.accepted_method.iter().any(|i| i.eq(&req.method())) {
             // Return 405 Method Not Allowed response.
             return self.not_allowed();
@@ -64,6 +60,9 @@ impl ApiHandler for AAClient {
 
         match url_path {
             AA_TOKEN_URL => {
+                if !is_aa_request_allowed(remote_addr, url_path, self.allow_remote_get_evidence) {
+                    return self.forbidden();
+                }
                 if req.method() != Method::GET {
                     return self.not_allowed();
                 }
@@ -79,6 +78,9 @@ impl ApiHandler for AAClient {
                 }
             }
             AA_EVIDENCE_URL => {
+                if !is_aa_request_allowed(remote_addr, url_path, self.allow_remote_get_evidence) {
+                    return self.forbidden();
+                }
                 if req.method() != Method::GET {
                     return self.not_allowed();
                 }
@@ -96,6 +98,9 @@ impl ApiHandler for AAClient {
                 }
             }
             AA_AAEL_URL => {
+                if !is_aa_request_allowed(remote_addr, url_path, self.allow_remote_get_evidence) {
+                    return self.forbidden();
+                }
                 if req.method() != Method::POST {
                     return self.not_allowed();
                 }
@@ -129,7 +134,11 @@ impl ApiHandler for AAClient {
 }
 
 impl AAClient {
-    pub fn new(aa_addr: &str, accepted_method: Vec<Method>) -> Result<Self> {
+    pub fn new(
+        aa_addr: &str,
+        accepted_method: Vec<Method>,
+        allow_remote_get_evidence: bool,
+    ) -> Result<Self> {
         let inner = ttrpc::asynchronous::Client::connect(aa_addr)
             .context(format!("ttrpc connect to AA addr: {} failed!", aa_addr))?;
         let client = AttestationAgentServiceClient::new(inner);
@@ -137,6 +146,7 @@ impl AAClient {
         Ok(Self {
             client,
             accepted_method,
+            allow_remote_get_evidence,
         })
     }
 
@@ -184,5 +194,53 @@ impl AAClient {
             .await
             .context("ttrpc extend_runtime_measurement failed")?;
         Ok(())
+    }
+}
+
+fn is_aa_request_allowed(
+    remote_addr: SocketAddr,
+    url_path: &str,
+    allow_remote_get_evidence: bool,
+) -> bool {
+    if remote_addr.ip().is_loopback() {
+        return true;
+    }
+
+    matches!(url_path, AA_EVIDENCE_URL) && allow_remote_get_evidence
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_addr() -> SocketAddr {
+        SocketAddr::from(([127, 0, 0, 1], 8006))
+    }
+
+    fn remote_addr() -> SocketAddr {
+        SocketAddr::from(([10, 0, 0, 8], 8006))
+    }
+
+    #[test]
+    fn local_requests_are_always_allowed() {
+        assert!(is_aa_request_allowed(local_addr(), AA_TOKEN_URL, false));
+        assert!(is_aa_request_allowed(local_addr(), AA_EVIDENCE_URL, false));
+        assert!(is_aa_request_allowed(local_addr(), AA_AAEL_URL, false));
+    }
+
+    #[test]
+    fn remote_evidence_access_is_configurable() {
+        assert!(!is_aa_request_allowed(
+            remote_addr(),
+            AA_EVIDENCE_URL,
+            false
+        ));
+        assert!(is_aa_request_allowed(remote_addr(), AA_EVIDENCE_URL, true));
+    }
+
+    #[test]
+    fn remote_non_evidence_aa_apis_remain_forbidden() {
+        assert!(!is_aa_request_allowed(remote_addr(), AA_TOKEN_URL, true));
+        assert!(!is_aa_request_allowed(remote_addr(), AA_AAEL_URL, true));
     }
 }

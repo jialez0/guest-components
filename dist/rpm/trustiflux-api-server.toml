@@ -5,8 +5,12 @@ bind = "0.0.0.0:8006"
 enable_cdh = false
 # Socket address of the Confidential Data Hub ttrpc service
 cdh_socket = "unix:///run/confidential-containers/cdh.sock"
+# Whether to allow remote access to CDH resource injection APIs
+allow_remote_resource_injection = false
 
 # Whether to forward Attestation Agent APIs
 enable_aa = true
 # Socket address of the Attestation Agent ttrpc service
 aa_socket = "unix:///run/confidential-containers/attestation-agent/attestation-agent.sock"
+# Whether to allow remote access to the AA get evidence API
+allow_remote_get_evidence = false

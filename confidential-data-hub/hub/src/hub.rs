@@ -12,14 +12,18 @@ use tokio::sync::{Mutex, OnceCell};
 
 use crate::kms;
 use crate::kms::{Annotations, ProviderSettings};
+#[cfg(feature = "resource_injection")]
+use crate::resource_injection::ResourceInjection;
 use crate::storage::volume_type::Storage;
-use crate::{image, secret, CdhConfig, DataHub, Error, Result};
+use crate::{image, secret, CdhConfig, DataHub, Error, PrepareResourceInjectionResult, Result};
 
 pub struct Hub {
     #[allow(dead_code)]
     pub(crate) credentials: HashMap<String, String>,
     image_client: OnceCell<Mutex<ImageClient>>,
     config: CdhConfig,
+    #[cfg(feature = "resource_injection")]
+    resource_injection: ResourceInjection,
 }
 
 impl Hub {
@@ -30,11 +34,15 @@ impl Hub {
             .iter()
             .map(|it| (it.path.clone(), it.resource_uri.clone()))
             .collect();
+        #[cfg(feature = "resource_injection")]
+        let resource_injection = ResourceInjection::new(config.aa_socket.clone());
 
         let mut hub = Self {
             credentials,
             config,
             image_client: OnceCell::const_new(),
+            #[cfg(feature = "resource_injection")]
+            resource_injection,
         };
 
         hub.init().await?;
@@ -72,6 +80,43 @@ impl DataHub for Hub {
             .await
             .map_err(|e| Error::GetResource { source: e })?;
         Ok(res)
+    }
+
+    async fn prepare_resource_injection(
+        &self,
+        resource_path: String,
+        nonce: String,
+    ) -> Result<PrepareResourceInjectionResult> {
+        #[cfg(not(feature = "resource_injection"))]
+        {
+            let _ = (&resource_path, &nonce);
+            return Err(Error::ResourceInjection(
+                "resource injection requires the `resource_injection` feature".to_string(),
+            ));
+        }
+
+        #[cfg(feature = "resource_injection")]
+        self.resource_injection.prepare(resource_path, nonce).await
+    }
+
+    async fn commit_resource_injection(
+        &self,
+        session_id: String,
+        resource_path: String,
+        encrypted_resource: Vec<u8>,
+    ) -> Result<()> {
+        #[cfg(not(feature = "resource_injection"))]
+        {
+            let _ = (&session_id, &resource_path, &encrypted_resource);
+            return Err(Error::ResourceInjection(
+                "resource injection requires the `resource_injection` feature".to_string(),
+            ));
+        }
+
+        #[cfg(feature = "resource_injection")]
+        self.resource_injection
+            .commit(session_id, resource_path, encrypted_resource)
+            .await
     }
 
     async fn secure_mount(&self, storage: Storage) -> Result<String> {
