@@ -3,7 +3,7 @@
 %global libdir /usr/lib
 
 Name:		trustiflux
-Version:	1.4.9
+Version:	1.5.0
 Release:	%{release}%{?dist}
 Summary:	A daemon service running inside TEE (Trusted Execution Environment) to confidential resource related APIs
 
@@ -137,6 +137,11 @@ rm -rf %{buildroot}
 %{libdir}/dracut/modules.d/99confidential-data-hub/module-setup.sh
 
 %changelog
+* Thu Apr 9 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.5.0-1
+- feat(attestation-agent): add IP to instance info from ECS metadata
+- feat(cdh,api-server-rest): add challenge-attestation resource injection APIs
+- fix(systemd): add startup ordering for trustiflux-api-server dependencies
+
 * Mon Jan 19 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.4.9-1
 - Attestation: system attester supports AAEL runtime measurements
 - Attestation agent: get_token supports additional_data (optional)
