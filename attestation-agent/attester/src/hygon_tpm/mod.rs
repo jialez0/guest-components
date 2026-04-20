@@ -11,13 +11,14 @@ use num_traits::FromPrimitive;
 use openssl::x509::X509;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env;
+use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;
 use tss_esapi::abstraction::{
     ak::{create_ak, load_ak},
     ek::{create_ek_object, retrieve_ek_pubcert},
-    pcr,
-    AsymmetricAlgorithmSelection, DefaultKey,
+    pcr, AsymmetricAlgorithmSelection, DefaultKey,
 };
 use tss_esapi::attributes::SessionAttributesBuilder;
 use tss_esapi::constants::SessionType;
@@ -32,13 +33,15 @@ use tss_esapi::structures::{
     Private, Public, Signature, SignatureScheme, SymmetricDefinition,
 };
 use tss_esapi::tcti_ldr::{DeviceConfig, TctiNameConf};
-use tss_esapi::traits::Marshall;
+use tss_esapi::traits::{Marshall, UnMarshall};
 use tss_esapi::Context as TssContext;
 
 const TPM_EVENTLOG_FILE_PATH: &str = "/sys/kernel/security/tpm0/binary_bios_measurements";
 const TPM_REPORT_DATA_SIZE: usize = 32;
 const PCR_BANK_SM3: &str = "SM3";
 const HYGON_CPU_VENDOR: &str = "HygonGenuine";
+const KEYLIME_AGENT_UUID_ENV: &str = "KEYLIME_AGENT_UUID";
+const KEYLIME_AGENT_DATA_PATH: &str = "/var/lib/keylime/agent_data.json";
 
 const TPM_QUOTE_PCR_SLOTS: [PcrSlot; 24] = [
     PcrSlot::Slot0,
@@ -84,6 +87,7 @@ pub struct HygonTpmQuote {
 pub struct HygonTpmEvidence {
     pub ek_cert: Option<String>,
     pub ak_pubkey: HygonSm2PublicKey,
+    pub keylime_agent_uuid: Option<String>,
     pub quote: HashMap<String, HygonTpmQuote>,
     pub eventlog: Option<String>,
     pub aa_eventlog: Option<String>,
@@ -93,6 +97,41 @@ pub struct HygonTpmEvidence {
 struct AttestationKey {
     ak_private: Private,
     ak_public: Public,
+}
+
+#[derive(serde::Deserialize)]
+struct AgentDataFile {
+    ak_hash_alg: String,
+    ak_sign_alg: String,
+    ak_public: Vec<u8>,
+    ak_private: Vec<u8>,
+    #[allow(dead_code)]
+    ek_hash: Vec<u8>,
+}
+
+fn try_get_keylime_uuid() -> Option<String> {
+    match env::var(KEYLIME_AGENT_UUID_ENV) {
+        Result::Ok(v) if !v.is_empty() => Some(v),
+        _ => None,
+    }
+}
+
+fn is_sm3_algorithm(name: &str) -> bool {
+    let normalized = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    normalized == "sm3" || normalized == "sm3256"
+}
+
+fn is_sm2_algorithm(name: &str) -> bool {
+    let normalized = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    normalized == "sm2" || normalized == "sm2p256"
 }
 
 pub fn detect_platform() -> bool {
@@ -302,14 +341,56 @@ impl Attester for HygonTpmAttester {
         }
         report_data.resize(TPM_REPORT_DATA_SIZE, 0);
 
-        let attestation_key = generate_sm2_ak()?;
-        let ak_pubkey = get_ak_pub(attestation_key.clone())?;
-
+        let mut keylime_uuid: Option<String> = None;
         let mut quote = HashMap::new();
-        quote.insert(
-            PCR_BANK_SM3.to_string(),
-            get_quote(attestation_key, &report_data, PCR_BANK_SM3)?,
-        );
+        let mut ak_pubkey: Option<HygonSm2PublicKey> = None;
+
+        if let Some(uuid) = try_get_keylime_uuid() {
+            match File::open(KEYLIME_AGENT_DATA_PATH)
+                .map_err(|e| anyhow!("Open agent_data.json failed: {e}"))
+                .and_then(|f| {
+                    serde_json::from_reader::<_, AgentDataFile>(f)
+                        .map_err(|e| anyhow!("Parse agent_data.json failed: {e}"))
+                }) {
+                Result::Ok(ad) => {
+                    if !is_sm3_algorithm(&ad.ak_hash_alg) || !is_sm2_algorithm(&ad.ak_sign_alg) {
+                        log::warn!(
+                            "Unexpected Hygon AK params hash/sign: {}/{}; fallback to new AK",
+                            ad.ak_hash_alg,
+                            ad.ak_sign_alg
+                        );
+                    } else if let (Result::Ok(public), Result::Ok(private)) = (
+                        Public::unmarshall(&ad.ak_public),
+                        Private::try_from(ad.ak_private.clone()),
+                    ) {
+                        let ak = AttestationKey {
+                            ak_private: private,
+                            ak_public: public,
+                        };
+                        quote.insert(
+                            PCR_BANK_SM3.to_string(),
+                            get_quote(ak.clone(), &report_data, PCR_BANK_SM3)?,
+                        );
+                        ak_pubkey = Some(get_ak_pub(ak)?);
+                        keylime_uuid = Some(uuid);
+                    } else {
+                        log::warn!("Unmarshall Hygon AK public/private failed; fallback to new AK");
+                    }
+                }
+                Result::Err(e) => {
+                    log::warn!("{}; fallback to new AK", e);
+                }
+            }
+        }
+
+        if ak_pubkey.is_none() {
+            let attestation_key = generate_sm2_ak()?;
+            quote.insert(
+                PCR_BANK_SM3.to_string(),
+                get_quote(attestation_key.clone(), &report_data, PCR_BANK_SM3)?,
+            );
+            ak_pubkey = Some(get_ak_pub(attestation_key)?);
+        }
 
         let engine = base64::engine::general_purpose::STANDARD;
         let eventlog = match std::fs::read(TPM_EVENTLOG_FILE_PATH) {
@@ -323,7 +404,8 @@ impl Attester for HygonTpmAttester {
         let aa_eventlog = read_eventlog().await?;
         let evidence = HygonTpmEvidence {
             ek_cert: dump_ek_cert_pem().ok(),
-            ak_pubkey,
+            ak_pubkey: ak_pubkey.ok_or_else(|| anyhow!("AK pubkey must be set"))?,
+            keylime_agent_uuid: keylime_uuid,
             quote,
             eventlog,
             aa_eventlog,
