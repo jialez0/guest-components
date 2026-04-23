@@ -490,8 +490,22 @@ mod tests {
     use std::fs;
     use test_utils::assert_retry;
 
+    const LIVE_IMAGE_PULL_TESTS_ENV: &str = "RUN_LIVE_IMAGE_PULL_TESTS";
+
+    fn live_image_pull_tests_enabled() -> bool {
+        std::env::var_os(LIVE_IMAGE_PULL_TESTS_ENV).is_some()
+    }
+
     #[tokio::test]
     async fn test_pull_image() {
+        if !live_image_pull_tests_enabled() {
+            eprintln!(
+                "skipping live image pull test; set {}=1 to run it",
+                LIVE_IMAGE_PULL_TESTS_ENV
+            );
+            return;
+        }
+
         let work_dir = tempfile::tempdir().unwrap();
 
         // TODO test with more OCI image registries and fix broken registries.

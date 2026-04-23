@@ -123,6 +123,14 @@ const SIGSTORE_CONFIG_URI: &str = "kbs:///default/sigstore-config/test";
 #[tokio::test]
 #[serial_test::serial]
 async fn signature_verification() {
+    if !common::live_image_pull_tests_enabled() {
+        eprintln!(
+            "skipping live signature verification test; set {}=1 to run it",
+            common::LIVE_IMAGE_PULL_TESTS_ENV
+        );
+        return;
+    }
+
     do_signature_verification_tests(&_TESTS, common::OFFLINE_FS_KBC_RESOURCES_FILE, &None).await;
 }
 
@@ -134,6 +142,14 @@ async fn signature_verification() {
 #[tokio::test]
 #[serial_test::serial]
 async fn signature_verification_xrss() {
+    if !common::live_image_pull_tests_enabled() {
+        eprintln!(
+            "skipping live xrss signature verification test; set {}=1 to run it",
+            common::LIVE_IMAGE_PULL_TESTS_ENV
+        );
+        return;
+    }
+
     match std::env::var("AUTH_PASSWORD") {
         Ok(auth_password) => match !auth_password.is_empty() {
             true => {

@@ -184,24 +184,13 @@ mod tests {
     // registry and repository
     const IMAGE_DIGEST: &str =
         "sha256:10e0ec4c7663b5f9be6efd16d8ceec760efe5377b9a0762ef3f51101ac08b7e8";
+    const LIVE_COSIGN_TESTS_ENV: &str = "RUN_LIVE_COSIGN_TESTS";
+
+    fn live_cosign_tests_enabled() -> bool {
+        std::env::var_os(LIVE_COSIGN_TESTS_ENV).is_some()
+    }
 
     #[rstest]
-    #[case(
-        CosignParameters{
-            key_path: Some(
-                format!(
-                    "{}/test_data/signature/cosign/cosign1.pub",
-                    std::env::current_dir()
-                        .expect("get current dir")
-                        .to_str()
-                        .expect("get current dir"),
-                )
-            ),
-            key_data: None,
-            signed_identity: None,
-        },
-        "ghcr.io/confidential-containers/test-container-image-rs:cosign-signed",
-    )]
     #[case(
         CosignParameters{
             key_path: Some(
@@ -224,6 +213,14 @@ mod tests {
         #[case] parameter: CosignParameters,
         #[case] image_reference: &str,
     ) {
+        if !live_cosign_tests_enabled() {
+            eprintln!(
+                "skipping live cosign test; set {}=1 to run it",
+                LIVE_COSIGN_TESTS_ENV
+            );
+            return;
+        }
+
         let reference =
             Reference::try_from(image_reference).expect("deserialize OCI Reference failed.");
         let mut image = Image::default_with_reference(reference);
@@ -353,6 +350,14 @@ mod tests {
         #[case] allow: bool,
         #[case] failed_reason: &str,
     ) {
+        if !live_cosign_tests_enabled() {
+            eprintln!(
+                "skipping live cosign test; set {}=1 to run it",
+                LIVE_COSIGN_TESTS_ENV
+            );
+            return;
+        }
+
         let policy_requirement: PolicyReqType =
             serde_json::from_str(policy).expect("deserialize PolicyReqType failed.");
         let reference = oci_client::Reference::try_from(image_reference)

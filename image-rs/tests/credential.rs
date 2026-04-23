@@ -15,6 +15,14 @@ pub mod common;
 #[tokio::test]
 #[serial_test::serial]
 async fn test_use_credential(#[case] image_ref: &str, #[case] auth_file_uri: &str) {
+    if !common::live_image_pull_tests_enabled() {
+        eprintln!(
+            "skipping live credential test; set {}=1 to run it",
+            common::LIVE_IMAGE_PULL_TESTS_ENV
+        );
+        return;
+    }
+
     common::prepare_test(common::OFFLINE_FS_KBC_RESOURCES_FILE).await;
 
     // // Init CDH

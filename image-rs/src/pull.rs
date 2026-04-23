@@ -242,6 +242,12 @@ mod tests {
 
     use test_utils::{assert_result, assert_retry};
 
+    const LIVE_IMAGE_PULL_TESTS_ENV: &str = "RUN_LIVE_IMAGE_PULL_TESTS";
+
+    fn live_image_pull_tests_enabled() -> bool {
+        std::env::var_os(LIVE_IMAGE_PULL_TESTS_ENV).is_some()
+    }
+
     #[ignore]
     #[tokio::test]
     async fn image_layer_order() {
@@ -291,6 +297,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_async_pull_client() {
+        if !live_image_pull_tests_enabled() {
+            eprintln!(
+                "skipping live image pull test; set {}=1 to run it",
+                LIVE_IMAGE_PULL_TESTS_ENV
+            );
+            return;
+        }
+
         let oci_images = [
             "ghcr.io/confidential-containers/test-container-image-rs:busybox-gzip",
             "ghcr.io/confidential-containers/test-container-image-rs:busybox-zstd",
@@ -332,6 +346,14 @@ mod tests {
     #[cfg(all(feature = "encryption", feature = "keywrap-jwe"))]
     #[tokio::test]
     async fn test_async_pull_client_encrypted() {
+        if !live_image_pull_tests_enabled() {
+            eprintln!(
+                "skipping live image pull test; set {}=1 to run it",
+                LIVE_IMAGE_PULL_TESTS_ENV
+            );
+            return;
+        }
+
         let oci_images =
             ["ghcr.io/confidential-containers/test-container-image-rs:busybox-encrypted-jwe"];
 

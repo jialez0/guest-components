@@ -29,6 +29,14 @@ const OCICRYPT_CONFIG: &str = "test_data/ocicrypt_keyprovider_ttrpc.conf";
 #[tokio::test]
 #[serial_test::serial]
 async fn test_decrypt_layers(#[case] image: &str) {
+    if !common::live_image_pull_tests_enabled() {
+        eprintln!(
+            "skipping live image decryption test; set {}=1 to run it",
+            common::LIVE_IMAGE_PULL_TESTS_ENV
+        );
+        return;
+    }
+
     common::prepare_test(common::OFFLINE_FS_KBC_RESOURCES_FILE).await;
     // Init CDH
     let _cdh = common::start_confidential_data_hub()

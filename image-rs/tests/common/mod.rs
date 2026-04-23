@@ -24,6 +24,12 @@ pub const OFFLINE_FS_KBC_RESOURCES_FILE: &str = "aa-offline_fs_kbc-resources.jso
 #[cfg(feature = "signature-simple-xrss")]
 pub const AA_OFFLINE_FS_KBC_RESOURCES_FILE_XRSS: &str = "aa-offline_fs_kbc-resources-for-icr.json";
 
+pub const LIVE_IMAGE_PULL_TESTS_ENV: &str = "RUN_LIVE_IMAGE_PULL_TESTS";
+
+pub fn live_image_pull_tests_enabled() -> bool {
+    std::env::var_os(LIVE_IMAGE_PULL_TESTS_ENV).is_some()
+}
+
 pub async fn prepare_test(offline_fs_kbc_resources: &str) {
     // Check whether is in root privilege
     assert!(
