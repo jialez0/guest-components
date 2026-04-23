@@ -12,7 +12,16 @@ set -o pipefail
 [ -n "${BASH_VERSION:-}" ] && set -o errtrace
 [ -n "${DEBUG:-}" ] && set -o xtrace
 
-source $HOME/.cargo/env
+if ! command -v cargo >/dev/null 2>&1; then
+    if [ -n "${CARGO_HOME:-}" ] && [ -f "${CARGO_HOME}/env" ]; then
+        source "${CARGO_HOME}/env"
+    elif [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+    else
+        echo >&2 "ERROR: cargo not found in PATH and no cargo env script is available"
+        exit 1
+    fi
+fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CDH_DIR=$SCRIPT_DIR/../../confidential-data-hub
