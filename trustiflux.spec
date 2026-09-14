@@ -3,7 +3,7 @@
 %global libdir /usr/lib
 
 Name:		trustiflux
-Version:	1.6.0
+Version:	1.7.0
 Release:	%{release}%{?dist}
 Summary:	A daemon service running inside TEE (Trusted Execution Environment) to confidential resource related APIs
 
@@ -150,6 +150,20 @@ rm -rf %{buildroot}
 %{libdir}/dracut/modules.d/99confidential-data-hub/module-setup.sh
 
 %changelog
+* Mon Sep 14 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.7.0-1
+- Attestation Agent/TDX: prefer sysfs runtime measurements and report runtime
+  measurement capability
+- CDH/Trustee: support plugin resource URIs, AA passport tokens, plaintext
+  plugin responses, and additional offline KBC resources
+- CDH sealed secrets: add signing and verification configuration and generate
+  signing keys when required
+- Image pull: add source and security configuration, JWE support, integrity
+  validation, AA measurements, and insecure-registry handling
+- Secure storage: manage encrypted block storage in Rust while preserving
+  legacy block-device requests
+- Build: raise the Rust and RPM toolchain baseline to 1.88 and resolve the new
+  compiler and Clippy diagnostics
+
 * Thu Aug 20 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.6.0-1
 - Attestation Agent: support SVSM vTPM measurements in SNP evidence
 - Attestation Agent: preserve compatibility with plain SNP attestation
