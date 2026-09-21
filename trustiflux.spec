@@ -61,6 +61,11 @@ export CXX=clang++
 # switch later components back to a vendored OpenSSL build.
 export OPENSSL_NO_VENDOR=1
 
+# Keep compiler diagnostics and panic locations useful without embedding the
+# package builder's home directory or RPM build root in delivered binaries.
+rust_path_remap_flags="--remap-path-prefix=${HOME}=/usr/src --remap-path-prefix=%{_builddir}=/usr/src/debug/guest-components-%{version}"
+export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }${rust_path_remap_flags}"
+
 # building the attestation-agent
 cargo build -p attestation-agent --bin ttrpc-aa --release --no-default-features --features bin,ttrpc,rust-crypto,coco_as,kbs,tdx-attester,system-attester,tpm-attester,instance_info,csv-attester,hygon-dcu-attester --target x86_64-unknown-linux-gnu
 cargo build -p attestation-agent --bin ttrpc-aa-client --release --no-default-features --features bin,ttrpc,eventlog --target x86_64-unknown-linux-gnu
@@ -125,7 +130,7 @@ rm -rf %{buildroot}
 %{_bindir}/attestation-agent
 %{_bindir}/attestation-agent-client
 %dir %{config_dir}
-%{config_dir}/attestation-agent.toml
+%config(noreplace) %{config_dir}/attestation-agent.toml
 %{libdir}/systemd/system/attestation-agent.service
 %dir %{libdir}/dracut/modules.d/99attestation-agent
 %{libdir}/dracut/modules.d/99attestation-agent/module-setup.sh
@@ -144,7 +149,7 @@ rm -rf %{buildroot}
 %{_bindir}/confidential-data-hub
 %{_bindir}/confidential-data-hub-daemon
 %{_bindir}/confidential-data-hub-client
-%{config_dir}/confidential-data-hub.toml
+%config(noreplace) %{config_dir}/confidential-data-hub.toml
 %{libdir}/systemd/system/confidential-data-hub-daemon.service
 %dir %{libdir}/dracut/modules.d/99confidential-data-hub
 %{libdir}/dracut/modules.d/99confidential-data-hub/confidential-data-hub.toml
@@ -156,6 +161,8 @@ rm -rf %{buildroot}
   normalize fixed-width chip IDs for local certificate lookup
 - Packaging: require the matching attestation-agent from confidential-data-hub
   so composite-attestation clients cannot be version-skewed
+- Packaging: preserve existing AA and CDH TOML configuration across upgrades
+- Packaging: remap builder-specific source paths in delivered Rust binaries
 
 * Thu Sep 17 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.7.1-alpha
 - Attestation: use the hardware-validated csv-rs revision for mixed Hygon DCU
