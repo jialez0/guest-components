@@ -1,4 +1,4 @@
-%define release alpha
+%define release beta
 %global config_dir /etc/trustiflux
 %global libdir /usr/lib
 
@@ -37,6 +37,7 @@ trustiflux-api-server exposes attestation-agent and confidential-data-hub ttRPC 
 
 %package -n confidential-data-hub
 Summary:	Confidential Data Hub is a daemon service running inside TEE (Trusted Execution Environment) to provide confidential resource related APIs.
+Requires: attestation-agent = %{version}-%{release}
 
 %description -n confidential-data-hub
 Confidential Data Hub is a daemon service running inside TEE (Trusted Execution Environment) to provide confidential resource related APIs.
@@ -150,6 +151,12 @@ rm -rf %{buildroot}
 %{libdir}/dracut/modules.d/99confidential-data-hub/module-setup.sh
 
 %changelog
+* Mon Sep 21 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.7.1-beta
+- Attestation: update csv-rs to Hygon's latest secure-adapter revision and
+  normalize fixed-width chip IDs for local certificate lookup
+- Packaging: require the matching attestation-agent from confidential-data-hub
+  so composite-attestation clients cannot be version-skewed
+
 * Thu Sep 17 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.7.1-alpha
 - Attestation: use the hardware-validated csv-rs revision for mixed Hygon DCU
   systems and current driver ioctl ABI
