@@ -1,4 +1,4 @@
-%define release beta
+%define release 1
 %global config_dir /etc/trustiflux
 %global libdir /usr/lib
 
@@ -156,6 +156,14 @@ rm -rf %{buildroot}
 %{libdir}/dracut/modules.d/99confidential-data-hub/module-setup.sh
 
 %changelog
+* Mon Oct 12 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.7.1-1
+- Attestation: publish mixed Hygon DCU adapter support using public
+  openanolis/csv-rs and normalize chip IDs for local certificate lookup
+- Attestation: retain SM3 for Hygon TPM primary evidence and use the default
+  SHA-384 algorithm for additional device evidence
+- RPM: preserve AA/CDH configuration, require matching AA/CDH package versions,
+  and remap builder-specific source paths
+
 * Mon Sep 21 2026 Jiale Zhang <zhangjiale@linux.alibaba.com> - 1.7.1-beta
 - Attestation: update csv-rs to Hygon's latest secure-adapter revision and
   normalize fixed-width chip IDs for local certificate lookup
